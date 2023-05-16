@@ -12,7 +12,7 @@ Then install this package.
 
 ```
 git clone git@github.com:speckdavid/up-symk.git
-pip install up-symk
+pip install up-symk/
 ```
 
 ## Usages

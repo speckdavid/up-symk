@@ -30,7 +30,7 @@ SYMK_REPO = 'https://github.com/speckdavid/symk.git'
 # SYMK_RELEASE = 'release-22.12'
 SYMK_RELEASE = None
 # CHANGESET is ignored if release is not None
-SYMK_CHANGESET = 'f040ce02c835fecb983c8ac7fd6f3f089a37bee1'
+SYMK_CHANGESET = 'abb9ce701bfd55f675e242bf95fe50f0eea5fefe'
 
 
 def clone_and_compile_symk():

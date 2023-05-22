@@ -40,8 +40,8 @@ class SymKPDDLPlannerBase(PDDLPlanner):
         self._symk_preprocess_options = symk_preprocess_options
         self._symk_search_time_limit = symk_search_time_limit
         self._log_level = log_level
-        self._guarantee_no_plan_found = ResultStatus.UNSOLVABLE_INCOMPLETELY
-        self._guarantee_metrics_task = ResultStatus.SOLVED_SATISFICING
+        self._guarantee_no_plan_found = ResultStatus.UNSOLVABLE_PROVEN
+        self._guarantee_metrics_task = ResultStatus.SOLVED_OPTIMALLY
         self._mode_running = OperationMode.ONESHOT_PLANNER
 
     def _get_cmd(
@@ -103,16 +103,28 @@ class SymKPDDLPlannerBase(PDDLPlanner):
 
 
 class SymKOptimalPDDLPlanner(SymKPDDLPlannerBase, mixins.AnytimePlannerMixin):
-    def __init__(self, number_of_plans: Optional[int] = None, log_level: str = "info"):
+    def __init__(self,
+                 symk_search_config: Optional[str] = None,
+                 symk_anytime_search_config: Optional[str] = None,
+                 number_of_plans: Optional[int] = None,
+                 log_level: str = "info"):
         assert number_of_plans is None or number_of_plans > 0
-        number_of_plans = "infinity" if number_of_plans is None else str(number_of_plans)
+        if number_of_plans is None:
+            input_number_of_plans = "infinity"
+        else:
+            input_number_of_plans = number_of_plans
+
+        if symk_search_config is None:
+            symk_search_config = "sym-bd()"
+
+        if symk_anytime_search_config is None:
+            symk_anytime_search_config = f"symq-bd(plan_selection=top_k(num_plans={input_number_of_plans},dump_plans=true),quality=1.0)"
+
         super().__init__(
-            symk_search_config="sym-bd()",
-            symk_anytime_search_config=f"symq-bd(plan_selection=top_k(num_plans={number_of_plans},dump_plans=true),quality=1.0)",
+            symk_search_config=symk_search_config,
+            symk_anytime_search_config=symk_anytime_search_config,
             log_level=log_level
         )
-        self._guarantee_no_plan_found = ResultStatus.UNSOLVABLE_PROVEN
-        self._guarantee_metrics_task = ResultStatus.SOLVED_OPTIMALLY
 
     @property
     def name(self) -> str:
@@ -252,4 +264,58 @@ class SymKOptimalPDDLPlanner(SymKPDDLPlannerBase, mixins.AnytimePlannerMixin):
     def ensures(anytime_guarantee: up.engines.AnytimeGuarantee) -> bool:
         if anytime_guarantee == up.engines.AnytimeGuarantee.OPTIMAL_PLANS:
             return True
+        return False
+
+
+class SymKPDDLPlanner(SymKOptimalPDDLPlanner):
+    def __init__(self,
+                 symk_anytime_search_config: Optional[str] = None,
+                 number_of_plans: Optional[int] = None,
+                 log_level: str = "info"):
+
+        assert number_of_plans is None or number_of_plans > 0
+        if number_of_plans is None:
+            input_number_of_plans = "infinity"
+        else:
+            input_number_of_plans = number_of_plans
+
+        if symk_anytime_search_config is None:
+            symk_anytime_search_config = f"symk-bd(plan_selection=top_k(num_plans={input_number_of_plans},dump_plans=true))"
+
+        super().__init__(
+            symk_anytime_search_config=symk_anytime_search_config,
+            number_of_plans=number_of_plans,
+            log_level=log_level
+        )
+
+    @property
+    def name(self) -> str:
+        return "SymK"
+
+    def _solve(
+        self,
+        problem: "up.model.AbstractProblem",
+        heuristic: Optional[
+            Callable[["up.model.state.ROState"], Optional[float]]
+        ] = None,
+        timeout: Optional[float] = None,
+        output_stream: Optional[Union[Tuple[IO[str],
+                                            IO[str]], IO[str]]] = None,
+        anytime: bool = False,
+    ):
+        if anytime:
+            self._guarantee_metrics_task = ResultStatus.SOLVED_SATISFICING
+        else:
+            self._guarantee_metrics_task = ResultStatus.SOLVED_OPTIMALLY
+        return super()._solve(problem, heuristic, timeout, output_stream, anytime=anytime)
+
+
+    # Oneshot planner is optimal
+    @staticmethod
+    def satisfies(optimality_guarantee: "OptimalityGuarantee") -> bool:
+        return True
+
+    # Plans are reported with increasing costs thus potentially also non-optimal ones
+    @staticmethod
+    def ensures(anytime_guarantee: up.engines.AnytimeGuarantee) -> bool:
         return False

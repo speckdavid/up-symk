@@ -14,7 +14,7 @@ from unified_planning.engines.results import LogLevel, LogMessage, PlanGeneratio
 
 credits = {
     "name": "SymK",
-    "author": "David Speck (cf. https://github.com/speckdavid/symk/blob/master/README.md)",
+    "author": "David Speck (cf. https://github.com/speckdavid/symk/blob/master/README.md )",
     "contact": "david.speck@liu.se (for UP integration)",
     "website": "https://github.com/speckdavid/symk",
     "license": "GPLv3",

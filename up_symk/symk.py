@@ -27,6 +27,7 @@ class SymKPDDLPlannerBase(PDDLPlanner):
     def __init__(
         self,
         symk_search_config: Optional[str] = None,
+        symk_anytime_search_config: Optional[str] = None,
         symk_translate_options: Optional[List[str]] = None,
         symk_preprocess_options: Optional[List[str]] = None,
         symk_search_time_limit: Optional[str] = None,
@@ -34,12 +35,14 @@ class SymKPDDLPlannerBase(PDDLPlanner):
     ):
         super().__init__(rewrite_bool_assignments=True)
         self._symk_search_config = symk_search_config
+        self._symk_anytime_search_config = symk_anytime_search_config
         self._symk_translate_options = symk_translate_options
         self._symk_preprocess_options = symk_preprocess_options
         self._symk_search_time_limit = symk_search_time_limit
         self._log_level = log_level
         self._guarantee_no_plan_found = ResultStatus.UNSOLVABLE_INCOMPLETELY
         self._guarantee_metrics_task = ResultStatus.SOLVED_SATISFICING
+        self._mode_running = OperationMode.ONESHOT_PLANNER
 
     def _get_cmd(
         self, domain_filename: str, problem_filename: str, plan_filename: str
@@ -58,8 +61,12 @@ class SymKPDDLPlannerBase(PDDLPlanner):
         if self._symk_preprocess_options:
             cmd += ["--preprocess-options"] + self._symk_preprocess_options
         if self._symk_search_config:
-            cmd += ["--search-options", "--search"] + \
-                self._symk_search_config.split()
+            if self._mode_running is OperationMode.ONESHOT_PLANNER:
+                cmd += ["--search-options", "--search"] + \
+                    self._symk_search_config.split()
+            elif self._mode_running is OperationMode.ANYTIME_PLANNER:
+                cmd += ["--search-options", "--search"] + \
+                    self._symk_anytime_search_config.split()
         return cmd
 
     def _result_status(
@@ -95,10 +102,14 @@ class SymKPDDLPlannerBase(PDDLPlanner):
             return ResultStatus.INTERNAL_ERROR
 
 
-class SymKOptimalPDDLPlanner(SymKPDDLPlannerBase):
-    def __init__(self, log_level: str = "info"):
+class SymKOptimalPDDLPlanner(SymKPDDLPlannerBase, mixins.AnytimePlannerMixin):
+    def __init__(self, number_of_plans: Optional[int] = None, log_level: str = "info"):
+        assert number_of_plans is None or number_of_plans > 0
+        number_of_plans = "infinity" if number_of_plans is None else str(number_of_plans)
         super().__init__(
-            symk_search_config="sym-bd()", log_level=log_level
+            symk_search_config="sym-bd()",
+            symk_anytime_search_config=f"symq-bd(plan_selection=top_k(num_plans={number_of_plans},dump_plans=true),quality=1.0)",
+            log_level=log_level
         )
         self._guarantee_no_plan_found = ResultStatus.UNSOLVABLE_PROVEN
         self._guarantee_metrics_task = ResultStatus.SOLVED_OPTIMALLY
@@ -118,57 +129,22 @@ class SymKOptimalPDDLPlanner(SymKPDDLPlannerBase):
         c.long_description = " ".join(details)
         return c
 
-    @staticmethod
-    def supported_kind() -> "ProblemKind":
-        supported_kind = ProblemKind()
-        supported_kind.set_problem_class("ACTION_BASED")
-        supported_kind.set_typing("FLAT_TYPING")
-        supported_kind.set_typing("HIERARCHICAL_TYPING")
-        supported_kind.set_conditions_kind("NEGATIVE_CONDITIONS")
-        supported_kind.set_conditions_kind("DISJUNCTIVE_CONDITIONS")
-        supported_kind.set_conditions_kind("EXISTENTIAL_CONDITIONS")
-        supported_kind.set_conditions_kind("UNIVERSAL_CONDITIONS")
-        supported_kind.set_conditions_kind("EQUALITIES")
-        supported_kind.set_effects_kind("CONDITIONAL_EFFECTS")
-        supported_kind.set_effects_kind(
-            "STATIC_FLUENTS_IN_BOOLEAN_ASSIGNMENTS")
-        supported_kind.set_effects_kind("FLUENTS_IN_BOOLEAN_ASSIGNMENTS")
-        supported_kind.set_quality_metrics("ACTIONS_COST")
-        supported_kind.set_actions_cost_kind("STATIC_FLUENTS_IN_ACTIONS_COST")
-        supported_kind.set_quality_metrics("PLAN_LENGTH")
-        return supported_kind
-
-    @staticmethod
-    def supports(problem_kind: "ProblemKind") -> bool:
-        return problem_kind <= SymKOptimalPDDLPlanner.supported_kind()
-
-    @staticmethod
-    def satisfies(optimality_guarantee: OptimalityGuarantee) -> bool:
-        return True
-
-
-class SymKTopKPDDLPlanner(SymKPDDLPlannerBase, mixins.AnytimePlannerMixin):
-    def __init__(self, log_level: str = "info"):
-        super().__init__(
-            symk_search_config="symk-bd(plan_selection=top_k(num_plans=10,dump_plans=true))", log_level=log_level
-        )
-        self._guarantee_no_plan_found = ResultStatus.UNSOLVABLE_PROVEN
-        self._guarantee_metrics_task = ResultStatus.SOLVED_OPTIMALLY
-
-    @property
-    def name(self) -> str:
-        return "SymK (top-k planning)"
-
-    @staticmethod
-    def get_credits(**kwargs) -> Optional["Credits"]:
-        c = Credits(**credits)
-        details = [
-            c.long_description,
-            "The top-k engine uses symbolic bidirectional search by",
-            "David Speck.",
-        ]
-        c.long_description = " ".join(details)
-        return c
+    def _solve(
+        self,
+        problem: "up.model.AbstractProblem",
+        heuristic: Optional[
+            Callable[["up.model.state.ROState"], Optional[float]]
+        ] = None,
+        timeout: Optional[float] = None,
+        output_stream: Optional[Union[Tuple[IO[str],
+                                            IO[str]], IO[str]]] = None,
+        anytime: bool = False,
+    ):
+        if anytime:
+            self._mode_running = OperationMode.ANYTIME_PLANNER
+        else:
+            self._mode_running = OperationMode.ONESHOT_PLANNER
+        return super()._solve(problem, heuristic, timeout, output_stream)
 
     def _get_solutions(
         self,
@@ -225,7 +201,7 @@ class SymKTopKPDDLPlanner(SymKPDDLPlannerBase, mixins.AnytimePlannerMixin):
 
         def run():
             writer: IO[str] = Writer(output_stream, q, self)
-            res = self._solve(problem, output_stream=writer)
+            res = self._solve(problem, output_stream=writer, anytime=True)
             q.put(res)
 
         try:
@@ -246,9 +222,7 @@ class SymKTopKPDDLPlanner(SymKPDDLPlannerBase, mixins.AnytimePlannerMixin):
 
     @staticmethod
     def satisfies(optimality_guarantee: "OptimalityGuarantee") -> bool:
-        if optimality_guarantee == OptimalityGuarantee.SATISFICING:
-            return True
-        return False
+        return True
 
     @staticmethod
     def supported_kind() -> "ProblemKind":
@@ -272,11 +246,10 @@ class SymKTopKPDDLPlanner(SymKPDDLPlannerBase, mixins.AnytimePlannerMixin):
 
     @staticmethod
     def supports(problem_kind: "ProblemKind") -> bool:
-        return problem_kind <= SymKTopKPDDLPlanner.supported_kind()
+        return problem_kind <= SymKOptimalPDDLPlanner.supported_kind()
 
-    # TODO: other guarentee
     @staticmethod
     def ensures(anytime_guarantee: up.engines.AnytimeGuarantee) -> bool:
-        if anytime_guarantee == up.engines.AnytimeGuarantee.INCREASING_QUALITY:
+        if anytime_guarantee == up.engines.AnytimeGuarantee.OPTIMAL_PLANS:
             return True
         return False

@@ -73,7 +73,7 @@ class install_symk_develop(develop):
 long_description = "This package makes the [SymK](https://github.com/speckdavid/symk) planner available in the [unified_planning library](https://github.com/aiplan4eu/unified-planning) by the [AIPlan4EU project](https://www.aiplan4eu-project.eu/)."
 
 setup(name='up_symk',
-      version='0.0.1',
+      version='0.0.2',
       description='Unified Planning Integration of the SymK planner',
       long_description=long_description,
       long_description_content_type="text/markdown",

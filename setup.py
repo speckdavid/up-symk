@@ -46,7 +46,7 @@ def clone_and_compile_symk():
     if SYMK_RELEASE is None:
         subprocess.run(['git', 'checkout', SYMK_CHANGESET])
     print("Building SymK (this can take some time)...")
-    build = subprocess.run(['python3', 'build.py'])
+    build = subprocess.run(['./build.py'])
     strip_downward = subprocess.run(
         ['strip', '--strip-all', 'builds/release/bin/downward'])
     strip_preprocess = subprocess.run(

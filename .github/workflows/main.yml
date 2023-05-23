@@ -54,12 +54,12 @@ jobs:
     if: github.ref == 'refs/heads/main' # We only deploy on main commits
 
     steps:
-      - uses: actions/download-artifact@main
+      - uses: actions/download-artifact@master
         with:
           name: linux-wheel
           path: dist
 
-      - uses: actions/download-artifact@main
+      - uses: actions/download-artifact@master
         with:
           name: windows-mac-wheels
           path: dist
@@ -67,7 +67,7 @@ jobs:
       - run: ls dist
 
       - name: Upload to PyPI
-       uses: pypa/gh-action-pypi-publish@main
-       with:
-         user: __token__
-         password: ${{ secrets.PYPI_API_TOKEN }}
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+        #  user: __token__
+          password: ${{ secrets.PYPI_API_TOKEN }}

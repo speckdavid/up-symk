@@ -51,7 +51,7 @@ jobs:
   deploy-pypi:
     runs-on: ubuntu-latest
     needs: [build-linux, build-win-and-mac]
-    if: github.ref == 'refs/heads/main' # We only deploy on main commits
+    if: github.repository == 'speckdavid/up-symk' # We only deploy on the correct repo (TODO: change the repo)
 
     steps:
       - uses: actions/download-artifact@master
@@ -66,8 +66,8 @@ jobs:
 
       - run: ls dist
 
-      # - name: Upload to PyPI
-      #   uses: pypa/gh-action-pypi-publish@release/v1
-      #   with:
-      #   #  user: __token__
-      #     password: ${{ secrets.PYPI_API_TOKEN }}
+      - name: Upload to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+        #  user: __token__
+          password: ${{ secrets.PYPI_API_TOKEN }}

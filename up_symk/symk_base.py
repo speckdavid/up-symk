@@ -17,8 +17,8 @@ credits = {
     "contact": "david.speck@liu.se (for UP integration)",
     "website": "https://github.com/speckdavid/symk",
     "license": "GPLv3",
-    "short_description": "SymK is a state-of-the-art domain-independent classical optimal and top-k planner.",
-    "long_description": "SymK is a state-of-the-art domain-independent classical optimal and top-k planner.",
+    "short_description": "SymK is a state-of-the-art domain-independent optimal and top-k planner.",
+    "long_description": "SymK is a state-of-the-art domain-independent optimal and top-k planner.",
 }
 
 
@@ -111,3 +111,25 @@ class SymKMixin(PDDLPlanner):
             return ResultStatus.UNSOLVABLE_INCOMPLETELY
         else:
             return ResultStatus.INTERNAL_ERROR
+
+
+def replace_search_engine_in_config(search_config: str, new_engine: str) -> str:
+    # Find the index of the first "(" in the search engine configuration
+    search_config_last_id = search_config.find("(")
+
+    # Make sure that "(" is found in the search engine configuration
+    assert (
+        search_config_last_id != -1
+    ), "Opening parenthesis not found in search engine configuration."
+
+    # Replace the search engine substring with the new engine
+    updated_config = f"{new_engine}{search_config[search_config_last_id:]}"
+
+    return updated_config
+
+
+def format_input_value(value, min_value=0):
+    if value is None:
+        return "infinity"
+    assert value >= min_value if value is not None else True
+    return value

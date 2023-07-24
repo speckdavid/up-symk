@@ -41,20 +41,19 @@ class SymKOptimalPDDLPlanner(SymKMixin, PDDLAnytimePlanner):
         symk_preprocess_options: Optional[List[str]] = None,
         symk_search_time_limit: Optional[str] = None,
         number_of_plans: Optional[int] = None,
+        plan_cost_bound: Optional[int] = None,
         log_level: str = "info",
     ):
         PDDLAnytimePlanner.__init__(self)
-        assert number_of_plans is None or number_of_plans > 0
-        if number_of_plans is None:
-            input_number_of_plans = "infinity"
-        else:
-            input_number_of_plans = number_of_plans
+
+        input_number_of_plans = format_input_value(number_of_plans, min_value=1)
+        input_plan_cost_bound = format_input_value(plan_cost_bound, min_value=0)
 
         if symk_search_config is None:
-            symk_search_config = "sym-bd()"
+            symk_search_config = f"sym-bd(bound={input_plan_cost_bound})"
 
         if symk_anytime_search_config is None:
-            symk_anytime_search_config = f"symq-bd(plan_selection=top_k(num_plans={input_number_of_plans},dump_plans=true),quality=1.0)"
+            symk_anytime_search_config = f"symq-bd(plan_selection=top_k(num_plans={input_number_of_plans},dump_plans=true),bound={input_plan_cost_bound},quality=1.0)"
 
         SymKMixin.__init__(
             self,
@@ -75,8 +74,7 @@ class SymKOptimalPDDLPlanner(SymKMixin, PDDLAnytimePlanner):
         c = Credits(**credits)
         details = [
             c.long_description,
-            "The optimal engine uses symbolic bidirectional search by",
-            "David Speck.",
+            "The optimal engine uses symbolic search by David Speck.",
         ]
         c.long_description = " ".join(details)
         return c
@@ -146,8 +144,26 @@ class SymKOptimalPDDLPlanner(SymKMixin, PDDLAnytimePlanner):
         if osp_metric:
             assert (
                 len(problem.goals) == 0
-            ), "Oversubscription Engine of Symk does not support hard goals yet!"
-            return self._solve_osp_task(problem, timeout, output_stream)
+            ), "The oversubscription engine of Symk does not support hard goals! To simulate hard goals, please assign a very high utility to the hard goals (and set the plan cost bound accordingly)."
+
+            # Replace search engine
+            self._symk_search_config = replace_search_engine_in_config(
+                self._symk_search_config, "sym-osp-fw"
+            )
+            if self.ensures(up.engines.AnytimeGuarantee.OPTIMAL_PLANS):
+                assert "symq" in self._symk_anytime_search_config
+                self._symk_anytime_search_config = replace_search_engine_in_config(
+                    self._symk_anytime_search_config, "symq-osp-fw"
+                )
+            else:
+                assert "symk" in self._symk_anytime_search_config
+                self._symk_anytime_search_config = replace_search_engine_in_config(
+                    self._symk_anytime_search_config, "symk-osp-fw"
+                )
+
+            return self._solve_osp_task(
+                problem, timeout, output_stream, anytime=anytime
+            )
 
         return super()._solve(
             problem, heuristic, timeout, output_stream, anytime=anytime
@@ -160,6 +176,7 @@ class SymKOptimalPDDLPlanner(SymKMixin, PDDLAnytimePlanner):
         problem: "up.model.AbstractProblem",
         timeout: Optional[float] = None,
         output_stream: Optional[Union[Tuple[IO[str], IO[str]], IO[str]]] = None,
+        anytime: bool = False,
     ) -> "up.engines.results.PlanGenerationResult":
         assert isinstance(problem, up.model.Problem)
         self._writer = OspPDDLWriter(
@@ -168,8 +185,6 @@ class SymKOptimalPDDLPlanner(SymKMixin, PDDLAnytimePlanner):
         plan = None
         logs: List["up.engines.results.LogMessage"] = []
 
-
-
         with tempfile.TemporaryDirectory() as tempdir:
             domain_filename = os.path.join(tempdir, "domain.pddl")
             problem_filename = os.path.join(tempdir, "problem.pddl")
@@ -177,16 +192,17 @@ class SymKOptimalPDDLPlanner(SymKMixin, PDDLAnytimePlanner):
             self._writer.write_domain(domain_filename)
             self._writer.write_problem(problem_filename)
 
-            # TODO: Fix that anytime planner can be called!
-            if self._mode_running == OperationMode.ONESHOT_PLANNER:
-                cmd = self._get_cmd(domain_filename, problem_filename, plan_filename)
-            elif self._mode_running == OperationMode.ANYTIME_PLANNER:
+            if anytime:
                 assert isinstance(
                     self, up.engines.pddl_anytime_planner.PDDLAnytimePlanner
                 )
                 cmd = self._get_anytime_cmd(
                     domain_filename, problem_filename, plan_filename
                 )
+            else:
+                assert self._mode_running == OperationMode.ONESHOT_PLANNER
+                cmd = self._get_cmd(domain_filename, problem_filename, plan_filename)
+
             if output_stream is None:
                 # If we do not have an output stream to write to, we simply call
                 # a subprocess and retrieve the final output and error with communicate
@@ -258,20 +274,19 @@ class SymKPDDLPlanner(SymKOptimalPDDLPlanner):
         self,
         symk_anytime_search_config: Optional[str] = None,
         number_of_plans: Optional[int] = None,
+        plan_cost_bound: Optional[int] = None,
         log_level: str = "info",
     ):
-        assert number_of_plans is None or number_of_plans > 0
-        if number_of_plans is None:
-            input_number_of_plans = "infinity"
-        else:
-            input_number_of_plans = number_of_plans
+        input_number_of_plans = format_input_value(number_of_plans, min_value=1)
+        input_plan_cost_bound = format_input_value(plan_cost_bound, min_value=0)
 
         if symk_anytime_search_config is None:
-            symk_anytime_search_config = f"symk-bd(plan_selection=top_k(num_plans={input_number_of_plans},dump_plans=true))"
+            symk_anytime_search_config = f"symk-bd(plan_selection=top_k(num_plans={input_number_of_plans},dump_plans=true),bound={input_plan_cost_bound})"
 
         super().__init__(
             symk_anytime_search_config=symk_anytime_search_config,
             number_of_plans=number_of_plans,
+            plan_cost_bound=plan_cost_bound,
             log_level=log_level,
         )
 

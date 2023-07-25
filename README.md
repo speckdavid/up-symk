@@ -1,8 +1,15 @@
 # Integration of SymK with the Unified Planning Library
 
-## Installation
+This repository was created within the `Symbolic Search for Diverse Plans and Maximum Utility` project funded by the by the [AIPlan4EU project](https://www.aiplan4eu-project.eu/). 
+This project aims to enhance the [unified planning library](https://github.com/aiplan4eu/unified-planning) with four expressive extensions to traditional classical planning using the symbolic search planner [SymK](https://github.com/speckdavid/symk).
 
-Currently we are in the development phase and everything has to be built locally. First, build locally our version of the  [unified planning library](https://github.com/speckdavid/unified-planning) where we have registered SymK.
+## Installation
+Currently, we are in the development phase. 
+We recommend building our version of the [unified planning library](https://github.com/speckdavid/unified-planning) locally and then building this `up-symk` package locally.
+
+Please note that many core functionalities have already been merged into the official unified planning library repository, and the stable pypi version is available. You can install everything with `pip install unified-planning` and `pip install up-symk`. 
+However, it's important to be aware that the stable version 1.0.0 of unified-planning does not include all the necessary changes yet. 
+Therefore, we recommend following the installation steps below to proceed:
 
 The following should install all necessary dependencies.
 ```
@@ -24,4 +31,6 @@ pip install up-symk/
 ```
 
 ## Usages
-In the [notebooks folder](notebooks/), you can find an [example](https://github.com/aiplan4eu/up-symk/blob/master/notebooks/symk_usage.ipynb) of how to use the SymK planner within the unified planning library.
+In the [notebooks folder](notebooks/), you can find two examples of how to use the SymK planner within the unified planning library.
+ - [Multi-Solution Generation: Using SymK in the Unified Planning Library](https://github.com/aiplan4eu/up-symk/blob/master/notebooks/symk_usage.ipynb)
+ - [Optimizing Plan Utility: Using SymK in the Unified Planning Library](https://github.com/aiplan4eu/up-symk/blob/master/notebooks/symk_osp_usage.ipynb)

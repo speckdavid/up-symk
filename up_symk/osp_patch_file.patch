@@ -1,0 +1,2850 @@
+diff --git a/src/h2-preprocessor/helper_functions.cc b/src/h2-preprocessor/helper_functions.cc
+index 11024d522..69dd68999 100644
+--- a/src/h2-preprocessor/helper_functions.cc
++++ b/src/h2-preprocessor/helper_functions.cc
+@@ -109,6 +109,48 @@ void read_axioms(istream &in, const vector<Variable *> &variables,
+         axioms.push_back(Axiom(in, variables));
+ }
+ 
++void read_utils(istream &in, const vector<Variable *> &variables, vector<tuple<Variable *, int, int>> &utils) {
++    string word;
++    in >> word;
++    if (word != "begin_util") {
++        // set pointer back
++        in.seekg(-word.length(), std::ios::cur);
++        return;
++    }
++    int count;
++    in >> count;
++    for (int i = 0; i < count; i++) {
++        int varNo, val, util;
++        in >> varNo >> val >> util;
++        utils.push_back(make_tuple(variables[varNo], val, util));
++    }
++    check_magic(in, "end_util");
++}
++
++void read_constant_util(istream &in, int &constant_util) {
++    string word;
++    in >> word;
++    if (word != "begin_constant_util") {
++        // set pointer back
++        in.seekg(-word.length(), std::ios::cur);
++        return;
++    }
++    in >> constant_util;
++    check_magic(in, "end_constant_util");
++}
++
++void read_bound(istream &in, int &bound) {
++    string word;
++    in >> word;
++    if (word != "begin_bound") {
++        // set pointer back
++        in.seekg(-word.length(), std::ios::cur);
++        return;
++    }
++    in >> bound;
++    check_magic(in, "end_bound");
++}
++
+ void read_preprocessed_problem_description(istream &in,
+                                            bool &metric,
+                                            vector<Variable> &internal_variables,
+@@ -117,13 +159,22 @@ void read_preprocessed_problem_description(istream &in,
+                                            State &initial_state,
+                                            vector<pair<Variable *, int>> &goals,
+                                            vector<Operator> &operators,
+-                                           vector<Axiom> &axioms) {
++                                           vector<Axiom> &axioms,
++                                           vector<tuple<Variable *, int, int>> &utils,
++                                           int &constant_util,
++                                           int &bound) {
+     read_and_verify_version(in);
+     read_metric(in, metric);
+     read_variables(in, internal_variables, variables);
+     read_mutexes(in, mutexes, variables);
+     initial_state = State(in, variables);
+     read_goal(in, variables, goals);
++
++    // try to read osp things
++    read_utils(in, variables, utils);
++    read_constant_util(in, constant_util);
++    read_bound(in, bound);
++
+     read_operators(in, variables, operators);
+     read_axioms(in, variables, axioms);
+ }
+@@ -202,6 +253,71 @@ void generate_cpp_input(const vector<Variable *> &ordered_vars,
+ 
+     outfile.close();
+ }
++
++void generate_cpp_osp_input(const vector<Variable *> &vars,
++                            const bool &metric,
++                            const vector<MutexGroup> &mutexes,
++                            const State &initial_state,
++                            const vector<Operator> &operators,
++                            const vector<Axiom> &axioms,
++                            vector<tuple<Variable *, int, int>> &utils,
++                            int constant_util,
++                            int bound
++                            ) {
++    ofstream outfile;
++    outfile.open("output.sas", ios::out);
++
++    outfile << "begin_version" << endl;
++    outfile << PRE_FILE_VERSION << endl;
++    outfile << "end_version" << endl;
++
++    outfile << "begin_metric" << endl;
++    outfile << metric << endl;
++    outfile << "end_metric" << endl;
++
++    outfile << vars.size() << endl;
++    for (Variable *var : vars)
++        var->generate_cpp_input(outfile);
++
++    outfile << mutexes.size() << endl;
++    for (const MutexGroup &mutex : mutexes)
++        mutex.generate_cpp_input(outfile);
++
++    outfile << "begin_state" << endl;
++    for (Variable *var : vars)
++        outfile << initial_state[var] << endl;  // for axioms default value
++    outfile << "end_state" << endl;
++
++    outfile << "begin_goal" << endl;
++    outfile << "0" << endl;
++    outfile << "end_goal" << endl;
++
++    outfile << "begin_util" << endl;
++    outfile << utils.size() << endl;
++    for (const auto &util : utils) {
++        outfile << get<0>(util)->get_level() << " " << get<1>(util) << " " << get<2>(util) << endl;
++    }
++    outfile << "end_util" << endl;
++
++    outfile << "begin_constant_util" << endl;
++    outfile << constant_util << endl;
++    outfile << "end_constant_util" << endl;
++
++    outfile << "begin_bound" << endl;
++    outfile << bound << endl;
++    outfile << "end_bound" << endl;
++
++    outfile << operators.size() << endl;
++    for (const Operator &op : operators)
++        op.generate_cpp_input(outfile);
++
++    outfile << axioms.size() << endl;
++    for (const Axiom &axiom : axioms)
++        axiom.generate_cpp_input(outfile);
++
++    outfile.close();
++}
++
+ void generate_unsolvable_cpp_input() {
+     ofstream outfile;
+     outfile.open("output.sas", ios::out);
+diff --git a/src/h2-preprocessor/helper_functions.h b/src/h2-preprocessor/helper_functions.h
+index cfaf2488b..25fa10e12 100644
+--- a/src/h2-preprocessor/helper_functions.h
++++ b/src/h2-preprocessor/helper_functions.h
+@@ -16,15 +16,19 @@ class Operator;
+ class Axiom;
+ 
+ //void read_everything
+-void read_preprocessed_problem_description(istream & in,
++void read_preprocessed_problem_description(istream &in,
+                                            bool &metric,
+                                            vector<Variable> &internal_variables,
+                                            vector<Variable *> &variables,
+                                            vector<MutexGroup> &mutexes,
+-                                           State & initial_state,
++                                           State &initial_state,
+                                            vector<pair<Variable *, int>> &goals,
+                                            vector<Operator> &operators,
+-                                           vector<Axiom> &axioms);
++                                           vector<Axiom> &axioms,
++                                           vector<tuple<Variable *, int, int>> &utils,
++                                           int &constant_util,
++                                           int &bound);
++
+ 
+ //void dump_everything
+ void dump_preprocessed_problem_description(const vector<Variable *> &variables,
+@@ -34,6 +38,7 @@ void dump_preprocessed_problem_description(const vector<Variable *> &variables,
+                                            const vector<Axiom> &axioms);
+ 
+ void generate_unsolvable_cpp_input();
++
+ void generate_cpp_input(const vector<Variable *> &ordered_var,
+                         const bool &metric,
+                         const vector<MutexGroup> &mutexes,
+@@ -41,6 +46,17 @@ void generate_cpp_input(const vector<Variable *> &ordered_var,
+                         const vector<pair<Variable *, int>> &goals,
+                         const vector<Operator> &operators,
+                         const vector<Axiom> &axioms);
+-void check_magic(istream & in, string magic);
++
++void generate_cpp_osp_input(const vector<Variable *> &vars,
++                            const bool &metric,
++                            const vector<MutexGroup> &mutexes,
++                            const State &initial_state,
++                            const vector<Operator> &operators,
++                            const vector<Axiom> &axioms,
++                            vector<tuple<Variable *, int, int>> &utils,
++                            int constant_util,
++                            int bound);
++
++void check_magic(istream &in, string magic);
+ 
+ #endif
+diff --git a/src/h2-preprocessor/planner.cc b/src/h2-preprocessor/planner.cc
+index 0e40ce3e0..c1d1935e3 100644
+--- a/src/h2-preprocessor/planner.cc
++++ b/src/h2-preprocessor/planner.cc
+@@ -13,6 +13,7 @@
+ #include "axiom.h"
+ #include "h2_mutexes.h"
+ #include "variable.h"
++#include <cassert>
+ #include <iostream>
+ using namespace std;
+ 
+@@ -31,6 +32,11 @@ int main(int argc, const char **argv) {
+     vector<Operator> operators;
+     vector<Axiom> axioms;
+ 
++    // osp stuff which may replace goals
++    vector<tuple<Variable *, int, int>> utils;
++    int constant_util = -1;
++    int bound = -1;
++
+     for (int i = 1; i < argc; ++i) {
+         string arg = string(argv[i]);
+         if (arg.compare("--no_rel") == 0) {
+@@ -65,10 +71,24 @@ int main(int argc, const char **argv) {
+     }
+ 
+     read_preprocessed_problem_description
+-        (cin, metric, internal_variables, variables, mutexes, initial_state, goals, operators, axioms);
++        (cin, metric, internal_variables, variables, mutexes, initial_state, goals, operators, axioms, utils, constant_util, bound);
+     //dump_preprocessed_problem_description
+     //  (variables, initial_state, goals, operators, axioms);
+ 
++    assert(goals.size() == 0 || utils.size() == 0);
++
++    if (utils.size() > 0) {
++        assert(goals.size() == 0);
++        cout << "Disabling preprocessing because it does not currently support utilities." << endl;
++        for (size_t i = 0; i < variables.size(); ++i) {
++            variables.at(i)->set_level(i);
++        }
++        generate_cpp_osp_input(
++            variables, metric, mutexes, initial_state, operators, axioms, utils, constant_util, bound);
++        cout << "done" << endl;
++        return 0;
++    }
++
+     cout << "Building causal graph..." << endl;
+     CausalGraph causal_graph(variables, operators, axioms, goals);
+     const vector<Variable *> &ordering = causal_graph.get_variable_ordering();
+@@ -81,7 +101,7 @@ int main(int argc, const char **argv) {
+ 
+     // compute h2 mutexes
+     if (axioms.size() > 0) {
+-        cout << "Disabling h2 analysis because it does not currently support axioms" << endl;
++        cout << "Disabling h2 analysis because it does not currently support axioms." << endl;
+     } else if (h2_mutex_time) {
+         bool conditional_effects = false;
+         for (const Operator &op : operators) {
+@@ -224,7 +244,7 @@ int main(int argc, const char **argv) {
+         }
+     }
+     // Calculate the problem size
+-    int task_size = ordering.size() + facts + goals.size();
++    int task_size = ordering.size() + facts + goals.size() + utils.size();
+ 
+     for (const MutexGroup &mutex : mutexes)
+         task_size += mutex.get_encoding_size();
+diff --git a/src/search/DownwardFiles.cmake b/src/search/DownwardFiles.cmake
+index eec2a7353..77b9b174c 100644
+--- a/src/search/DownwardFiles.cmake
++++ b/src/search/DownwardFiles.cmake
+@@ -806,40 +806,43 @@ fast_downward_plugin(
+     NAME SYMBOLIC
+     HELP "Plugin containing the base for symbolic search"
+     SOURCES
+-        symbolic/sym_bucket
+-        symbolic/opt_order
+-        symbolic/sym_variables
+-        symbolic/sym_enums
+-        symbolic/sym_utils
+-        symbolic/sym_state_space_manager
+-        symbolic/transition_relation
+-        symbolic/original_state_space
+-        symbolic/sym_params_search
+-        symbolic/sym_estimate
++        symbolic/closed_list
+         symbolic/frontier
+         symbolic/open_list
+-        symbolic/closed_list
+-        symbolic/searches/bidirectional_search
+-        symbolic/searches/uniform_cost_search
+-        symbolic/searches/sym_search
+-        symbolic/searches/top_k_uniform_cost_search
+-        symbolic/search_engines/symbolic_search
+-        symbolic/search_engines/symbolic_uniform_cost_search
+-        symbolic/search_engines/top_k_symbolic_uniform_cost_search
+-        symbolic/search_engines/top_q_symbolic_uniform_cost_search
++        symbolic/opt_order
++        symbolic/original_state_space
++        symbolic/plan_reconstruction/reconstruction_node
+         symbolic/plan_reconstruction/sym_solution_cut
+         symbolic/plan_reconstruction/sym_solution_registry
+-        symbolic/plan_reconstruction/reconstruction_node
+         symbolic/plan_selection/iterative_cost_selector
+         symbolic/plan_selection/plan_selector
+-        symbolic/plan_selection/top_k_selector
+-        symbolic/plan_selection/top_k_even_selector
+         symbolic/plan_selection/simple_selector
++        symbolic/plan_selection/top_k_even_selector
++        symbolic/plan_selection/top_k_selector
+         symbolic/plan_selection/unordered_selector
+         symbolic/plan_selection/validation_selector
++        symbolic/search_engines/symbolic_osp_search
++        symbolic/search_engines/symbolic_osp_top_k_search
++        symbolic/search_engines/symbolic_search
++        symbolic/search_engines/symbolic_uniform_cost_search
++        symbolic/search_engines/top_k_symbolic_uniform_cost_search
++        symbolic/search_engines/top_q_symbolic_uniform_cost_search
++        symbolic/searches/bidirectional_search
++        symbolic/searches/osp_cost_search
++        symbolic/searches/sym_search
++        symbolic/searches/top_k_uniform_cost_search
++        symbolic/searches/uniform_cost_search
+         symbolic/sym_axiom/sym_axiom_compilation
++        symbolic/sym_bucket
++        symbolic/sym_enums
++        symbolic/sym_estimate
+         symbolic/sym_function_creator
+-        DEPENDS SDAC
++        symbolic/sym_params_search
++        symbolic/sym_state_space_manager
++        symbolic/sym_utils
++        symbolic/sym_variables
++        symbolic/transition_relation
++    DEPENDS SDAC
+ )
+ 
+ fast_downward_add_plugin_sources(PLANNER_SOURCES)
+diff --git a/src/search/abstract_task.h b/src/search/abstract_task.h
+index 291a11ddd..b004ce1b8 100644
+--- a/src/search/abstract_task.h
++++ b/src/search/abstract_task.h
+@@ -7,6 +7,7 @@
+ #include "utils/hash.h"
+ #include "mutex_group.h"
+ 
++#include <map>
+ #include <memory>
+ #include <string>
+ #include <utility>
+@@ -96,6 +97,12 @@ public:
+     virtual std::vector<int> get_initial_state_values() const = 0;
+ 
+     virtual std::vector<MutexGroup> get_mutex_groups() const = 0;
++
++    virtual int get_num_utilties() const = 0;
++    virtual std::pair<FactPair, int> get_utility(int index) const = 0;
++    virtual int get_constant_utility() const = 0;
++    virtual int get_plan_cost_bound() const = 0;
++
+     /*
+       Convert state values from an ancestor task A (ancestor) into
+       state values from this task, C (child). Task A has to be an
+diff --git a/src/search/ext/cudd-3.0.0/cplusplus/cuddObj.cc b/src/search/ext/cudd-3.0.0/cplusplus/cuddObj.cc
+index aa4c37047..1b4550e75 100644
+--- a/src/search/ext/cudd-3.0.0/cplusplus/cuddObj.cc
++++ b/src/search/ext/cudd-3.0.0/cplusplus/cuddObj.cc
+@@ -616,7 +616,7 @@ ostream &operator<<(ostream &os, BDD const &f) {
+     DdManager *mgr = f.p->manager;
+     vector<char *> const &vn = f.p->varnames;
+     char const *const *inames = vn.size() == (size_t)Cudd_ReadSize(mgr) ?
+-                                &vn[0] : 0;
++        &vn[0] : 0;
+     char *str = Cudd_FactoredFormString(mgr, f.node, inames);
+     f.checkReturnValue(str);
+     os << string(str);
+@@ -2380,62 +2380,62 @@ ADD::Xnor(
+     return ADD(p, result);
+ } // ADD::Xnor
+ 
+-ADD ADD::Equals(const ADD& g) const {
++ADD ADD::Equals(const ADD &g) const {
+     DdManager *mgr = checkSameManager(g);
+     DdNode *result = Cudd_addApply(mgr, Cudd_addEquals, node, g.node);
+     checkReturnValue(result);
+     return ADD(p, result);
+ }
+ 
+-ADD ADD::NotEquals(const ADD& g) const {
++ADD ADD::NotEquals(const ADD &g) const {
+     DdManager *mgr = checkSameManager(g);
+     DdNode *result = Cudd_addApply(mgr, Cudd_addNotEquals, node, g.node);
+     checkReturnValue(result);
+     return ADD(p, result);
+ }
+ 
+-ADD ADD::GreaterThan(const ADD& g) const {
++ADD ADD::GreaterThan(const ADD &g) const {
+     DdManager *mgr = checkSameManager(g);
+     DdNode *result = Cudd_addApply(mgr, Cudd_addGreaterThan, node, g.node);
+     checkReturnValue(result);
+     return ADD(p, result);
+ }
+ 
+-ADD ADD::GreaterThanEquals(const ADD& g) const {
++ADD ADD::GreaterThanEquals(const ADD &g) const {
+     DdManager *mgr = checkSameManager(g);
+     DdNode *result = Cudd_addApply(mgr, Cudd_addGreaterThanEquals, node, g.node);
+     checkReturnValue(result);
+     return ADD(p, result);
+ }
+ 
+-ADD ADD::LessThan(const ADD& g) const {
++ADD ADD::LessThan(const ADD &g) const {
+     DdManager *mgr = checkSameManager(g);
+     DdNode *result = Cudd_addApply(mgr, Cudd_addLessThan, node, g.node);
+     checkReturnValue(result);
+     return ADD(p, result);
+ }
+ 
+-ADD ADD::LessThanEquals(const ADD& g) const {
++ADD ADD::LessThanEquals(const ADD &g) const {
+     DdManager *mgr = checkSameManager(g);
+     DdNode *result = Cudd_addApply(mgr, Cudd_addLessThanEquals, node, g.node);
+     checkReturnValue(result);
+     return ADD(p, result);
+ }
+ 
+-ADD ADD::Pow(const ADD& g) const {
++ADD ADD::Pow(const ADD &g) const {
+     DdManager *mgr = checkSameManager(g);
+     DdNode *result = Cudd_addApply(mgr, Cudd_addPow, node, g.node);
+     checkReturnValue(result);
+     return ADD(p, result);
+ }
+-ADD ADD::Mod(const ADD& g) const {
++ADD ADD::Mod(const ADD &g) const {
+     DdManager *mgr = checkSameManager(g);
+     DdNode *result = Cudd_addApply(mgr, Cudd_addMod, node, g.node);
+     checkReturnValue(result);
+     return ADD(p, result);
+ }
+ 
+-ADD ADD::LogXY(const ADD& g) const {
++ADD ADD::LogXY(const ADD &g) const {
+     DdManager *mgr = checkSameManager(g);
+     DdNode *result = Cudd_addApply(mgr, Cudd_addLogXY, node, g.node);
+     checkReturnValue(result);
+diff --git a/src/search/ext/cudd-3.0.0/cudd/cudd.h b/src/search/ext/cudd-3.0.0/cudd/cudd.h
+index 6c6198ef7..0cbde7e90 100644
+--- a/src/search/ext/cudd-3.0.0/cudd/cudd.h
++++ b/src/search/ext/cudd-3.0.0/cudd/cudd.h
+@@ -663,7 +663,7 @@ extern int Cudd_bddVarIsBound(DdManager *dd, int index);
+ extern DdNode *Cudd_addExistAbstract(DdManager *manager, DdNode *f, DdNode *cube);
+ extern DdNode *Cudd_addUnivAbstract(DdManager *manager, DdNode *f, DdNode *cube);
+ extern DdNode *Cudd_addOrAbstract(DdManager *manager, DdNode *f, DdNode *cube);
+-extern DdNode *Cudd_addMinAbstract (DdManager *manager, DdNode *f, DdNode *cube);
++extern DdNode *Cudd_addMinAbstract(DdManager *manager, DdNode *f, DdNode *cube);
+ extern DdNode *Cudd_addApply(DdManager *dd, DD_AOP op, DdNode *f, DdNode *g);
+ extern DdNode *Cudd_addPlus(DdManager *dd, DdNode **f, DdNode **g);
+ extern DdNode *Cudd_addTimes(DdManager *dd, DdNode **f, DdNode **g);
+@@ -682,15 +682,15 @@ extern DdNode *Cudd_addNor(DdManager *dd, DdNode **f, DdNode **g);
+ extern DdNode *Cudd_addXor(DdManager *dd, DdNode **f, DdNode **g);
+ extern DdNode *Cudd_addXnor(DdManager *dd, DdNode **f, DdNode **g);
+ 
+-extern DdNode *Cudd_addEquals (DdManager *dd, DdNode **f, DdNode **g);
+-extern DdNode *Cudd_addNotEquals (DdManager *dd, DdNode **f, DdNode **g);
+-extern DdNode *Cudd_addGreaterThan (DdManager *dd, DdNode **f, DdNode **g);
+-extern DdNode *Cudd_addGreaterThanEquals (DdManager *dd, DdNode **f, DdNode **g);
+-extern DdNode *Cudd_addLessThan (DdManager *dd, DdNode **f, DdNode **g);
+-extern DdNode *Cudd_addLessThanEquals (DdManager *dd, DdNode **f, DdNode **g);
+-extern DdNode *Cudd_addPow (DdManager *dd, DdNode **f, DdNode **g);
+-extern DdNode *Cudd_addMod (DdManager *dd, DdNode **f, DdNode **g);
+-extern DdNode *Cudd_addLogXY (DdManager *dd, DdNode **f, DdNode **g);
++extern DdNode *Cudd_addEquals(DdManager *dd, DdNode **f, DdNode **g);
++extern DdNode *Cudd_addNotEquals(DdManager *dd, DdNode **f, DdNode **g);
++extern DdNode *Cudd_addGreaterThan(DdManager *dd, DdNode **f, DdNode **g);
++extern DdNode *Cudd_addGreaterThanEquals(DdManager *dd, DdNode **f, DdNode **g);
++extern DdNode *Cudd_addLessThan(DdManager *dd, DdNode **f, DdNode **g);
++extern DdNode *Cudd_addLessThanEquals(DdManager *dd, DdNode **f, DdNode **g);
++extern DdNode *Cudd_addPow(DdManager *dd, DdNode **f, DdNode **g);
++extern DdNode *Cudd_addMod(DdManager *dd, DdNode **f, DdNode **g);
++extern DdNode *Cudd_addLogXY(DdManager *dd, DdNode **f, DdNode **g);
+ 
+ extern DdNode *Cudd_addMonadicApply(DdManager *dd, DD_MAOP op, DdNode *f);
+ extern DdNode *Cudd_addLog(DdManager *dd, DdNode *f);
+diff --git a/src/search/ext/cudd-3.0.0/cudd/cuddInt.h b/src/search/ext/cudd-3.0.0/cudd/cuddInt.h
+index 1032430da..fbe80059d 100644
+--- a/src/search/ext/cudd-3.0.0/cudd/cuddInt.h
++++ b/src/search/ext/cudd-3.0.0/cudd/cuddInt.h
+@@ -1025,7 +1025,7 @@ struct DdLevelQueue {
+                           (dd)->recursiveCalls, (dd)->keys,            \
+                           (dd)->keys - (dd)->dead,                     \
+                           (dd)->nodesDropped, (dd)->reclaimed);        \
+-            (dd)->nextSample += 250000; }                                \
++            (dd)->nextSample += 250000;}                                \
+     } \
+     while (0)
+ #else
+@@ -1069,8 +1069,8 @@ extern "C" {
+ extern DdNode *cuddAddExistAbstractRecur(DdManager *manager, DdNode *f, DdNode *cube);
+ extern DdNode *cuddAddUnivAbstractRecur(DdManager *manager, DdNode *f, DdNode *cube);
+ extern DdNode *cuddAddOrAbstractRecur(DdManager *manager, DdNode *f, DdNode *cube);
+-extern DdNode *cuddAddMinAbstractRecur (DdManager *manager, DdNode *f, DdNode *cube);
+-extern DdNode *cuddAddApplyRecur(DdManager * dd, DdNode * (*)(DdManager *, DdNode * *, DdNode * *), DdNode * f, DdNode * g);
++extern DdNode *cuddAddMinAbstractRecur(DdManager *manager, DdNode *f, DdNode *cube);
++extern DdNode *cuddAddApplyRecur(DdManager * dd, DdNode * (*)(DdManager *, DdNode **, DdNode **), DdNode *f, DdNode *g);
+ extern DdNode *cuddAddMonadicApplyRecur(DdManager *dd, DdNode * (*op)(DdManager *, DdNode *), DdNode *f);
+ extern DdNode *cuddAddScalarInverseRecur(DdManager *dd, DdNode *f, DdNode *epsilon);
+ extern DdNode *cuddAddIteRecur(DdManager *dd, DdNode *f, DdNode *g, DdNode *h);
+@@ -1093,14 +1093,14 @@ extern DdNode *cuddBddTransfer(DdManager *ddS, DdManager *ddD, DdNode *f);
+ extern DdNode *cuddAddBddDoPattern(DdManager *dd, DdNode *f);
+ extern int cuddInitCache(DdManager *unique, unsigned int cacheSize, unsigned int maxCacheSize);
+ extern void cuddCacheInsert(DdManager *table, ptruint op, DdNode *f, DdNode *g, DdNode *h, DdNode *data);
+-extern void cuddCacheInsert2(DdManager * table, DdNode * (*)(DdManager *, DdNode *, DdNode *), DdNode * f, DdNode * g, DdNode * data);
+-extern void cuddCacheInsert1(DdManager * table, DdNode * (*)(DdManager *, DdNode *), DdNode * f, DdNode * data);
++extern void cuddCacheInsert2(DdManager * table, DdNode * (*)(DdManager *, DdNode *, DdNode *), DdNode *f, DdNode *g, DdNode *data);
++extern void cuddCacheInsert1(DdManager * table, DdNode * (*)(DdManager *, DdNode *), DdNode *f, DdNode *data);
+ extern DdNode *cuddCacheLookup(DdManager *table, ptruint op, DdNode *f, DdNode *g, DdNode *h);
+ extern DdNode *cuddCacheLookupZdd(DdManager *table, ptruint op, DdNode *f, DdNode *g, DdNode *h);
+-extern DdNode *cuddCacheLookup2(DdManager * table, DdNode * (*)(DdManager *, DdNode *, DdNode *), DdNode * f, DdNode * g);
+-extern DdNode *cuddCacheLookup1(DdManager * table, DdNode * (*)(DdManager *, DdNode *), DdNode * f);
+-extern DdNode *cuddCacheLookup2Zdd(DdManager * table, DdNode * (*)(DdManager *, DdNode *, DdNode *), DdNode * f, DdNode * g);
+-extern DdNode *cuddCacheLookup1Zdd(DdManager * table, DdNode * (*)(DdManager *, DdNode *), DdNode * f);
++extern DdNode *cuddCacheLookup2(DdManager * table, DdNode * (*)(DdManager *, DdNode *, DdNode *), DdNode *f, DdNode *g);
++extern DdNode *cuddCacheLookup1(DdManager * table, DdNode * (*)(DdManager *, DdNode *), DdNode *f);
++extern DdNode *cuddCacheLookup2Zdd(DdManager * table, DdNode * (*)(DdManager *, DdNode *, DdNode *), DdNode *f, DdNode *g);
++extern DdNode *cuddCacheLookup1Zdd(DdManager * table, DdNode * (*)(DdManager *, DdNode *), DdNode *f);
+ extern DdNode *cuddConstantLookup(DdManager *table, ptruint op, DdNode *f, DdNode *g, DdNode *h);
+ extern int cuddCacheProfile(DdManager *table, FILE *fp);
+ extern void cuddCacheResize(DdManager *table);
+diff --git a/src/search/plan_manager.cc b/src/search/plan_manager.cc
+index efbedbd6e..21253fc36 100644
+--- a/src/search/plan_manager.cc
++++ b/src/search/plan_manager.cc
+@@ -44,7 +44,7 @@ void PlanManager::dump_plan(const Plan &plan,
+     OperatorsProxy operators = task_proxy.get_operators();
+     for (OperatorID op_id : plan) {
+         cout << operators[op_id].get_name() << " (" << operators[op_id].get_cost()
+-                     << ")" << endl;
++             << ")" << endl;
+     }
+     int plan_cost = calculate_plan_cost(plan, task_proxy);
+     utils::g_log << "Plan length: " << plan.size() << " step(s)." << endl;
+@@ -71,7 +71,7 @@ void PlanManager::save_plan(const Plan &plan, const TaskProxy &task_proxy,
+     for (OperatorID op_id : plan) {
+         if (dump_plan) {
+             cout << operators[op_id].get_name() << " (" << operators[op_id].get_cost()
+-                         << ")" << endl;
++                 << ")" << endl;
+         }
+         outfile << "(" << operators[op_id].get_name() << ")" << endl;
+     }
+diff --git a/src/search/search_engine.cc b/src/search/search_engine.cc
+index 919345d76..8354071ef 100644
+--- a/src/search/search_engine.cc
++++ b/src/search/search_engine.cc
+@@ -52,6 +52,7 @@ SearchEngine::SearchEngine(const Options &opts)
+       search_space(state_registry, log),
+       statistics(log),
+       cost_type(opts.get<OperatorCost>("cost_type")),
++      is_oversubscribed(task_properties::is_oversubscribed(task_proxy)),
+       is_unit_cost(task_properties::is_unit_cost(task_proxy)),
+       has_sdac_cost(task_properties::has_sdac_cost_operator(task_proxy)),
+       max_time(opts.get<double>("max_time")) {
+diff --git a/src/search/search_engine.h b/src/search/search_engine.h
+index 8ea065309..c1e9e8e0d 100644
+--- a/src/search/search_engine.h
++++ b/src/search/search_engine.h
+@@ -50,6 +50,7 @@ protected:
+     SearchStatistics statistics;
+     int bound;
+     OperatorCost cost_type;
++    bool is_oversubscribed;
+     bool is_unit_cost;
+     bool has_sdac_cost;
+     double max_time;
+diff --git a/src/search/search_engines/eager_search.cc b/src/search/search_engines/eager_search.cc
+index 421b6425a..a90ac2ca2 100644
+--- a/src/search/search_engines/eager_search.cc
++++ b/src/search/search_engines/eager_search.cc
+@@ -33,6 +33,11 @@ EagerSearch::EagerSearch(const Options &opts)
+         cerr << "lazy_evaluator must cache its estimates" << endl;
+         utils::exit_with(utils::ExitCode::SEARCH_INPUT_ERROR);
+     }
++    if (is_oversubscribed) {
++        cerr << "error: explicit search does not support oversubscribed tasks. "
++             << "Please use symbolic search." << endl;
++        utils::exit_with(utils::ExitCode::SEARCH_INPUT_ERROR);
++    }
+     if (has_sdac_cost) {
+         cerr << "error: explicit search does not support state-dependent action costs. "
+              << "Please use symbolic search." << endl;
+diff --git a/src/search/search_engines/enforced_hill_climbing_search.cc b/src/search/search_engines/enforced_hill_climbing_search.cc
+index 189fb8f63..976d90997 100644
+--- a/src/search/search_engines/enforced_hill_climbing_search.cc
++++ b/src/search/search_engines/enforced_hill_climbing_search.cc
+@@ -77,6 +77,11 @@ EnforcedHillClimbingSearch::EnforcedHillClimbingSearch(
+       current_phase_start_g(-1),
+       num_ehc_phases(0),
+       last_num_expanded(-1) {
++    if (is_oversubscribed) {
++        cerr << "error: explicit search does not support oversubscribed tasks. "
++             << "Please use symbolic search." << endl;
++        utils::exit_with(utils::ExitCode::SEARCH_INPUT_ERROR);
++    }
+     if (has_sdac_cost) {
+         cerr << "error: explicit search does not support state-dependent action costs. "
+              << "Please use symbolic search." << endl;
+diff --git a/src/search/search_engines/lazy_search.cc b/src/search/search_engines/lazy_search.cc
+index 0385a069a..b0561fbc8 100644
+--- a/src/search/search_engines/lazy_search.cc
++++ b/src/search/search_engines/lazy_search.cc
+@@ -35,6 +35,11 @@ LazySearch::LazySearch(const Options &opts)
+       We initialize current_eval_context in such a way that the initial node
+       counts as "preferred".
+     */
++    if (is_oversubscribed) {
++        cerr << "error: explicit search does not support oversubscribed tasks. "
++             << "Please use symbolic search." << endl;
++        utils::exit_with(utils::ExitCode::SEARCH_INPUT_ERROR);
++    }
+     if (has_sdac_cost) {
+         cerr << "error: explicit search does not support state-dependent action costs. "
+              << "Please use symbolic search." << endl;
+diff --git a/src/search/symbolic/plan_reconstruction/sym_solution_cut.cc b/src/search/symbolic/plan_reconstruction/sym_solution_cut.cc
+index ab9e1b65b..f79c1cd40 100644
+--- a/src/search/symbolic/plan_reconstruction/sym_solution_cut.cc
++++ b/src/search/symbolic/plan_reconstruction/sym_solution_cut.cc
+@@ -8,21 +8,41 @@ using namespace std;
+ namespace symbolic {
+ SymSolutionCut::SymSolutionCut() :
+     g(-1),
+-    h(-1) {}
++    h(-1),
++    util(-numeric_limits<int>::max()) {}
+ 
+-SymSolutionCut::SymSolutionCut(int g, int h, BDD cut) :
++SymSolutionCut::SymSolutionCut(int g, int h, int util, BDD cut) :
+     g(g),
+     h(h),
++    util(util),
+     cut(cut) {}
+ 
++
++SymSolutionCut::SymSolutionCut(int g, int h, BDD cut) :
++    SymSolutionCut(g, h, -1, cut) {}
++
+ int SymSolutionCut::get_g() const {return g;}
+ 
+ int SymSolutionCut::get_h() const {return h;}
+ 
+ int SymSolutionCut::get_f() const {return g + h;}
+ 
++int SymSolutionCut::get_util() const {return util;}
++
+ BDD SymSolutionCut::get_cut() const {return cut;}
+ 
++int SymSolutionCut::get_priority() const {
++    if (get_util() != -numeric_limits<int>::max()) {
++        // Negative to assign higest prio to max util
++        return -get_util();
++    }
++    return get_f();
++}
++
++bool SymSolutionCut::has_utility() const {
++    return get_util() != -numeric_limits<int>::max();
++}
++
+ void SymSolutionCut::merge(const SymSolutionCut &other) {
+     assert(*this == other);
+     cut += other.get_cut();
+@@ -32,25 +52,33 @@ void SymSolutionCut::set_g(int g) {this->g = g;}
+ 
+ void SymSolutionCut::set_h(int h) {this->h = h;}
+ 
++void SymSolutionCut::set_util(int util) {this->util = util;}
++
+ void SymSolutionCut::set_cut(BDD cut) {this->cut = cut;}
+ 
+ bool SymSolutionCut::operator<(const SymSolutionCut &other) const {
+-    bool result = get_f() < other.get_f();
+-    result |= (get_f() == other.get_f() && get_g() < other.get_g());
+-    return result;
++    if (get_util() > other.get_util())
++        return true;
++    if (get_util() < other.get_util())
++        return false;
++    if (get_f() < other.get_f())
++        return true;
++    if (get_f() > other.get_f())
++        return false;
++    if (get_g() < other.get_g())
++        return true;
++    return false;
+ }
+ 
+ bool SymSolutionCut::operator>(const SymSolutionCut &other) const {
+-    bool result = get_f() > other.get_f();
+-    result |= (get_f() == other.get_f() && get_g() > other.get_g());
+-    return result;
++    return !(*this < other);
+ }
+ 
+ bool SymSolutionCut::operator==(const SymSolutionCut &other) const {
+-    return get_g() == other.get_g() && get_h() == other.get_h();
++    return get_util() == other.get_util() && get_g() == other.get_g() && get_h() == other.get_h();
+ }
+ 
+ bool SymSolutionCut::operator!=(const SymSolutionCut &other) const {
+-    return !(get_g() == other.get_g() && get_h() == other.get_h());
++    return !(*this == other);
+ }
+ } // namespace symbolic
+diff --git a/src/search/symbolic/plan_reconstruction/sym_solution_cut.h b/src/search/symbolic/plan_reconstruction/sym_solution_cut.h
+index d57bfbe15..66bd41668 100644
+--- a/src/search/symbolic/plan_reconstruction/sym_solution_cut.h
++++ b/src/search/symbolic/plan_reconstruction/sym_solution_cut.h
+@@ -11,21 +11,30 @@ class SymSolutionCut {
+ protected:
+     int g;
+     int h;
++    int util; // utility for osp
+     BDD cut;
+ 
+ public:
+     SymSolutionCut(); // dummy for no solution
++    SymSolutionCut(int g, int h, int util, BDD cut);
+     SymSolutionCut(int g, int h, BDD cut);
+ 
+     int get_g() const;
+     int get_h() const;
+     int get_f() const;
++    int get_util() const;
+     BDD get_cut() const;
+ 
++    // Sorting of cuts: usually f but for osp it is util
++    int get_priority() const;
++
++    bool has_utility() const;
++
+     void merge(const SymSolutionCut &other);
+ 
+     void set_g(int g);
+     void set_h(int h);
++    void set_util(int util);
+     void set_cut(BDD cut);
+ 
+     // Here we only compare g and h values!!!
+@@ -38,6 +47,7 @@ public:
+                                     const SymSolutionCut &sym_cut) {
+         return os << "symcut{g=" << sym_cut.get_g() << ", h=" << sym_cut.get_h()
+                   << ", f=" << sym_cut.get_f()
++                  << ", u=" << sym_cut.get_util()
+                   << ", nodes=" << sym_cut.get_cut().nodeCount() << "}";
+     }
+ };
+diff --git a/src/search/symbolic/plan_reconstruction/sym_solution_registry.cc b/src/search/symbolic/plan_reconstruction/sym_solution_registry.cc
+index 48ebc8d00..73948a3ee 100644
+--- a/src/search/symbolic/plan_reconstruction/sym_solution_registry.cc
++++ b/src/search/symbolic/plan_reconstruction/sym_solution_registry.cc
+@@ -230,39 +230,65 @@ void SymSolutionRegistry::register_solution(const SymSolutionCut &solution) {
+         if (!sym_cuts.empty()) {
+             sym_cuts = map<int, vector<SymSolutionCut>>();
+         }
+-        sym_cuts[solution.get_f()].push_back(solution);
++        sym_cuts[solution.get_priority()].push_back(solution);
+         return;
+     }
+ 
++    // // We skip the merging optimization in case we have utilities
++    // if (solution.has_utility()) {
++    //     sym_cuts[solution.get_priority()].push_back(solution);
++    //     return;
++    // }
++
+     bool merged = false;
+     size_t pos = 0;
+-    for (; pos < sym_cuts[solution.get_f()].size(); pos++) {
++    for (; pos < sym_cuts[solution.get_priority()].size(); pos++) {
+         // a cut with same g and h values exist
+         // => we combine the cut to avoid multiple cuts with same solutions
+-        if (sym_cuts[solution.get_f()][pos] == solution) {
+-            sym_cuts[solution.get_f()][pos].merge(solution);
++        if (sym_cuts[solution.get_priority()][pos] == solution) {
++            sym_cuts[solution.get_priority()][pos].merge(solution);
+             merged = true;
+             break;
+         }
+     }
+     if (!merged) {
+-        sym_cuts[solution.get_f()].push_back(solution);
++        sym_cuts[solution.get_priority()].push_back(solution);
+     }
+ }
+ 
+-void SymSolutionRegistry::construct_cheaper_solutions(int bound) {
++void SymSolutionRegistry::construct_better_cost_solutions(int upper_cost_bound) {
+     for (const auto &key : sym_cuts) {
+         int plan_cost = key.first;
+         const vector<SymSolutionCut> &cuts = key.second;
+-        if (plan_cost >= bound || found_all_plans())
++        if (plan_cost >= upper_cost_bound || found_all_plans())
+             break;
+-
+         reconstruct_plans(cuts);
+     }
+ 
+     // Erase handled keys
+     for (auto it = sym_cuts.begin(); it != sym_cuts.end();) {
+-        (it->first < bound) ? sym_cuts.erase(it++) : (++it);
++        (it->first < upper_cost_bound) ? sym_cuts.erase(it++) : (++it);
++    }
++}
++
++void SymSolutionRegistry::construct_better_utility_solutions(int lower_utility_bound) {
++    for (const auto &key : sym_cuts) {
++        int plan_utility = -key.first; // negation because we use negative prios
++        const vector<SymSolutionCut> &cuts = key.second;
++        if (plan_utility <= lower_utility_bound || found_all_plans())
++            break;
++        reconstruct_plans(cuts);
++    }
++
++    // Erase handled keys (negation because we use negative prios)
++    for (auto it = sym_cuts.begin(); it != sym_cuts.end();) {
++        (-it->first > lower_utility_bound) ? sym_cuts.erase(it++) : (++it);
+     }
+ }
++
++void SymSolutionRegistry::reconstruct_solution(const SymSolutionCut &sol) {
++    vector<SymSolutionCut> cur_sols;
++    cur_sols.push_back(sol);
++    reconstruct_plans(cur_sols);
++}
+ }
+diff --git a/src/search/symbolic/plan_reconstruction/sym_solution_registry.h b/src/search/symbolic/plan_reconstruction/sym_solution_registry.h
+index 202a8c3f9..d858f3336 100644
+--- a/src/search/symbolic/plan_reconstruction/sym_solution_registry.h
++++ b/src/search/symbolic/plan_reconstruction/sym_solution_registry.h
+@@ -85,7 +85,9 @@ public:
+     virtual ~SymSolutionRegistry() = default;
+ 
+     void register_solution(const SymSolutionCut &solution);
+-    void construct_cheaper_solutions(int bound);
++    void construct_better_cost_solutions(int upper_cost_bound);
++    void construct_better_utility_solutions(int lower_utility_bound);
++    void reconstruct_solution(const SymSolutionCut &sol);
+ 
+     bool found_all_plans() const {
+         return plan_data_base && plan_data_base->found_enough_plans();
+@@ -102,15 +104,15 @@ public:
+         return plan_data_base->get_states_accepted_goal_path();
+     }
+ 
+-    double cheapest_solution_cost_found() const {
+-        double cheapest = std::numeric_limits<double>::infinity();
++    double best_solution_found() const {
++        double best_prio = std::numeric_limits<double>::infinity();
+         if (plan_data_base) {
+-            cheapest = std::min(cheapest, plan_data_base->get_first_plan_cost());
++            best_prio = std::min(best_prio, plan_data_base->get_first_plan_cost());
+         }
+         if (sym_cuts.size() > 0) {
+-            cheapest = std::min(cheapest, (double)sym_cuts.begin()->first);
++            best_prio = std::min(best_prio, (double)sym_cuts.begin()->first);
+         }
+-        return cheapest;
++        return best_prio;
+     }
+ };
+ }
+diff --git a/src/search/symbolic/search_engines/symbolic_osp_search.cc b/src/search/symbolic/search_engines/symbolic_osp_search.cc
+new file mode 100644
+index 000000000..6dee0a6ed
+--- /dev/null
++++ b/src/search/symbolic/search_engines/symbolic_osp_search.cc
+@@ -0,0 +1,168 @@
++#include "symbolic_osp_search.h"
++
++#include "../original_state_space.h"
++#include "../plugin.h"
++#include "../searches/osp_cost_search.h"
++#include "../sym_function_creator.h"
++
++#include "../../option_parser.h"
++
++
++using namespace std;
++
++namespace symbolic {
++void SymbolicOspSearch::initialize() {
++    SymbolicSearch::initialize();
++    initialize_utlility();
++
++    mgr = make_shared<OriginalStateSpace>(vars.get(), mgrParams, search_task);
++    unique_ptr<OspCostSearch> fw_search = unique_ptr<OspCostSearch>(new OspCostSearch(this, searchParams));
++    fw_search->init(mgr, true, nullptr);
++
++    auto individual_trs = fw_search->getStateSpaceShared()->getIndividualTRs();
++
++    solution_registry->init(vars,
++                            fw_search->getClosedShared(),
++                            nullptr,
++                            individual_trs,
++                            plan_data_base,
++                            single_solution,
++                            simple);
++
++    search.reset(fw_search.release());
++}
++
++void SymbolicOspSearch::initialize_utlility() {
++    upper_bound = min(search_task->get_plan_cost_bound(), upper_bound);
++
++    ADD add_utility_function = create_utility_function();
++    partition_add_to_bdds(vars.get(), add_utility_function, utility_function);
++    max_utility = utility_function.rbegin()->first;
++    assert(max_utility == round(Cudd_V(add_utility_function.FindMax().getNode())));
++
++    int min_utility = round(Cudd_V(add_utility_function.FindMin().getNode()));
++    if (min_utility <= -numeric_limits<int>::max()) {
++        cerr << "Utility values exceed integer limits." << endl;
++        utils::exit_with(utils::ExitCode::SEARCH_INPUT_ERROR);
++    }
++
++    utils::g_log << "Plan cost bound: " << upper_bound - 1 << endl;
++    utils::g_log << "Constant utility: " << search_task->get_constant_utility() << endl;
++    utils::g_log << "Number of utility facts: " << search_task->get_num_utilties() << endl;
++    utils::g_log << "Max utility value: " << max_utility << endl;
++    cout << endl;
++}
++
++ADD SymbolicOspSearch::create_utility_function() const {
++    ADD res = vars->constant(search_task->get_constant_utility());
++    for (const UtilityProxy util: task_proxy.get_utilities()) {
++        BDD fact = vars->get_axiom_compiliation()->get_primary_representation(util.get_fact_pair().var, util.get_fact_pair().value);
++        res += fact.Add() * vars->constant(util.get_utility());
++    }
++    // vars->to_dot(res, "utility.dot");
++    return res;
++}
++
++SymSolutionCut SymbolicOspSearch::get_highest_util_solution(const SymSolutionCut &sol) const {
++    double max_util_value = -1;
++    BDD max_util_states = vars->zeroBDD();
++    for (auto iter = utility_function.rbegin(); iter != utility_function.rend(); ++iter) {
++        max_util_states = iter->second * sol.get_cut();
++        if (!max_util_states.IsZero()) {
++            max_util_value = iter->first;
++            break;
++        }
++    }
++    return SymSolutionCut(sol.get_g(), sol.get_h(), round(max_util_value), max_util_states);
++}
++
++SymbolicOspSearch::SymbolicOspSearch(
++    const options::Options &opts) :
++    SymbolicSearch(opts),
++    max_utility(-numeric_limits<int>::max()),
++    highest_seen_utility(-numeric_limits<int>::max()) {
++    if (!is_oversubscribed) {
++        cerr << "error: osp symbolic search does not support ordinary classical planning tasks. "
++             << "Please use ordinary symbolic search, e.g., sym-bd()." << endl;
++        utils::exit_with(utils::ExitCode::SEARCH_INPUT_ERROR);
++    }
++}
++
++void SymbolicOspSearch::new_solution(const SymSolutionCut &sol) {
++    auto osp_sol = get_highest_util_solution(sol);
++    if (!solution_registry->found_all_plans() && sol.get_f() < upper_bound && highest_seen_utility < osp_sol.get_util()) {
++        solution_registry->register_solution(osp_sol);
++        highest_seen_utility = osp_sol.get_util();
++        utils::g_log << "Best util: " << highest_seen_utility << endl;
++    }
++}
++
++SearchStatus SymbolicOspSearch::step() {
++    step_num++;
++    // Handling empty plan
++    if (step_num == 0) {
++        BDD cut = mgr->getInitialState() * mgr->getGoal();
++        if (!cut.IsZero()) {
++            new_solution(SymSolutionCut(0, 0, cut));
++        }
++    }
++
++    SearchStatus cur_status = IN_PROGRESS;
++
++    // Search finished!
++    if (lower_bound >= upper_bound) {
++        solution_registry->construct_better_utility_solutions(-numeric_limits<int>::max());
++        solution_found = plan_data_base->get_num_reported_plan() > 0;
++        cur_status = solution_found ? SOLVED : FAILED;
++    } else if (max_utility == highest_seen_utility) {
++        // Highest utility => Search finished!
++        utils::g_log << "State with overall highest utility reached." << endl;
++        solution_registry->construct_better_utility_solutions(-numeric_limits<int>::max());
++        if (solution_registry->found_all_plans()) {
++            cur_status = SOLVED;
++        }
++    }
++    if (lower_bound_increased && !silent) {
++        utils::g_log << "BOUND: " << lower_bound << " < " << upper_bound << flush;
++
++        utils::g_log << " [" << solution_registry->get_num_found_plans() << "/"
++                     << plan_data_base->get_num_desired_plans() << " plans]"
++                     << flush;
++        utils::g_log << ", total time: " << utils::g_timer << endl;
++    }
++    lower_bound_increased = false;
++
++    if (cur_status == SOLVED) {
++        set_plan(plan_data_base->get_first_accepted_plan());
++        cout << endl;
++        return cur_status;
++    }
++    if (cur_status == FAILED) {
++        return cur_status;
++    }
++
++    // Actuall step
++    search->step();
++
++    return cur_status;
++}
++}
++
++static shared_ptr<SearchEngine> _parse_forward_osp(OptionParser &parser) {
++    parser.document_synopsis("Symbolic Forward Oversubscription Search", "");
++    symbolic::SymbolicSearch::add_options_to_parser(parser);
++    parser.add_option<shared_ptr<symbolic::PlanSelector>>(
++        "plan_selection", "plan selection strategy", "top_k(num_plans=1)");
++    Options opts = parser.parse();
++
++    shared_ptr<symbolic::SymbolicSearch> engine = nullptr;
++    if (!parser.dry_run()) {
++        engine = make_shared<symbolic::SymbolicOspSearch>(opts);
++        utils::g_log << "Symbolic Forward Oversubscription Search" << endl;
++    }
++
++    return engine;
++}
++
++static Plugin<SearchEngine> _plugin_sym_fw_ordinary("sym-osp-fw",
++                                                    _parse_forward_osp);
+diff --git a/src/search/symbolic/search_engines/symbolic_osp_search.h b/src/search/symbolic/search_engines/symbolic_osp_search.h
+new file mode 100644
+index 000000000..3ece38ca7
+--- /dev/null
++++ b/src/search/symbolic/search_engines/symbolic_osp_search.h
+@@ -0,0 +1,32 @@
++#ifndef SYMBOLIC_SEARCH_ENGINES_SYMBOLIC_OSP_SEARCH_H
++#define SYMBOLIC_SEARCH_ENGINES_SYMBOLIC_OSP_SEARCH_H
++
++#include "symbolic_search.h"
++
++#include <map>
++
++namespace symbolic {
++class SymbolicOspSearch : public SymbolicSearch {
++protected:
++    std::map<int, BDD> utility_function;
++    int max_utility;
++    int highest_seen_utility;
++
++    virtual void initialize() override;
++    virtual void initialize_utlility();
++
++    ADD create_utility_function() const;
++
++    SymSolutionCut get_highest_util_solution(const SymSolutionCut &sol) const;
++
++    virtual SearchStatus step() override;
++
++public:
++    SymbolicOspSearch(const options::Options &opts);
++    virtual ~SymbolicOspSearch() = default;
++
++    virtual void new_solution(const SymSolutionCut &sol) override;
++};
++}
++
++#endif
+diff --git a/src/search/symbolic/search_engines/symbolic_osp_top_k_search.cc b/src/search/symbolic/search_engines/symbolic_osp_top_k_search.cc
+new file mode 100644
+index 000000000..f082c6ebf
+--- /dev/null
++++ b/src/search/symbolic/search_engines/symbolic_osp_top_k_search.cc
+@@ -0,0 +1,164 @@
++#include "symbolic_osp_top_k_search.h"
++
++#include "../original_state_space.h"
++#include "../plugin.h"
++#include "../searches/osp_cost_search.h"
++#include "../sym_function_creator.h"
++
++#include "../../option_parser.h"
++
++
++using namespace std;
++
++namespace symbolic {
++void SymbolicOspTopkSearch::initialize() {
++    SymbolicSearch::initialize();
++    initialize_utlility();
++
++    mgr = make_shared<OriginalStateSpace>(vars.get(), mgrParams, search_task);
++    unique_ptr<OspCostSearch> fw_search = unique_ptr<OspCostSearch>(new OspCostSearch(this, searchParams));
++    fw_search->init(mgr, true, nullptr);
++
++    auto individual_trs = fw_search->getStateSpaceShared()->getIndividualTRs();
++
++    solution_registry->init(vars,
++                            fw_search->getClosedShared(),
++                            nullptr,
++                            individual_trs,
++                            plan_data_base,
++                            false,
++                            simple);
++
++    search.reset(fw_search.release());
++}
++
++SymbolicOspTopkSearch::SymbolicOspTopkSearch(
++    const options::Options &opts) :
++    SymbolicOspSearch(opts),
++    quality_multiplier(opts.get<double>("quality")) {
++    if (quality_multiplier != numeric_limits<double>::infinity())
++        utils::g_log << "Quality multiplier: " << quality_multiplier << endl;
++}
++
++vector<SymSolutionCut> SymbolicOspTopkSearch::get_all_util_solutions(const SymSolutionCut &sol) {
++    vector<SymSolutionCut> result;
++    for (auto iter = utility_function.rbegin(); iter != utility_function.rend(); ++iter) {
++        BDD util_states = iter->second * sol.get_cut();
++        if (!util_states.IsZero()) {
++            double util_value = iter->first;
++            result.emplace_back(sol.get_g(), sol.get_h(), round(util_value), util_states);
++        }
++    }
++    return result;
++}
++
++void SymbolicOspTopkSearch::new_solution(const SymSolutionCut &sol) {
++    if (solution_registry->found_all_plans() || sol.get_f() >= upper_bound)
++        return;
++
++    for (auto const &osp_sol : get_all_util_solutions(sol)) {
++        // We found a solution with highest possible utility and reconstruct it directly
++        // This is kind of a hack...
++        if (max_utility == osp_sol.get_util()) {
++            utils::g_log << "States with overall highest utility reached." << endl;
++            solution_registry->reconstruct_solution(osp_sol);
++            highest_seen_utility = osp_sol.get_util();
++            utils::g_log << "Best util: " << highest_seen_utility << endl;
++        } else {
++            solution_registry->register_solution(osp_sol);
++            if (osp_sol.get_util() > highest_seen_utility) {
++                highest_seen_utility = osp_sol.get_util();
++                utils::g_log << "Best util: " << highest_seen_utility << endl;
++            }
++        }
++    }
++}
++
++SearchStatus SymbolicOspTopkSearch::step() {
++    step_num++;
++    // Handling empty plan
++    if (step_num == 0) {
++        BDD cut = mgr->getInitialState() * mgr->getGoal();
++        if (!cut.IsZero()) {
++            new_solution(SymSolutionCut(0, 0, cut));
++        }
++    }
++
++    SearchStatus cur_status = IN_PROGRESS;
++
++    // Search finished!
++    if (lower_bound >= upper_bound) {
++        int lower_utility_bound = get_quality_bound();
++        if (lower_utility_bound != -numeric_limits<int>::max())
++            --lower_utility_bound;
++        solution_registry->construct_better_utility_solutions(lower_utility_bound);
++        solution_found = plan_data_base->get_num_reported_plan() > 0;
++        cur_status = solution_found ? SOLVED : FAILED;
++    }
++
++    if (lower_bound_increased && !silent) {
++        utils::g_log << "BOUND: " << lower_bound << " < " << upper_bound << flush;
++
++        utils::g_log << " [" << solution_registry->get_num_found_plans() << "/"
++                     << plan_data_base->get_num_desired_plans() << " plans]"
++                     << flush;
++        utils::g_log << ", total time: " << utils::g_timer << endl;
++    }
++    lower_bound_increased = false;
++
++    if (cur_status == SOLVED) {
++        set_plan(plan_data_base->get_first_accepted_plan());
++        cout << endl;
++        return cur_status;
++    }
++    if (cur_status == FAILED) {
++        return cur_status;
++    }
++
++    // Actuall step
++    search->step();
++
++    return cur_status;
++}
++}
++
++static shared_ptr<SearchEngine> _parse_forward_top_k_osp(OptionParser &parser) {
++    parser.document_synopsis("Symbolic Forward Oversubscription Top-k Search", "");
++    symbolic::SymbolicSearch::add_options_to_parser(parser);
++    parser.add_option<shared_ptr<symbolic::PlanSelector>>(
++        "plan_selection", "plan selection strategy");
++    Options opts = parser.parse();
++    opts.set<double>("quality", numeric_limits<double>::infinity());
++
++    shared_ptr<symbolic::SymbolicSearch> engine = nullptr;
++    if (!parser.dry_run()) {
++        engine = make_shared<symbolic::SymbolicOspTopkSearch>(opts);
++        utils::g_log << "Symbolic Forward Oversubscription Top-k Search" << endl;
++    }
++
++    return engine;
++}
++
++static shared_ptr<SearchEngine> _parse_forward_top_q_osp(OptionParser &parser) {
++    parser.document_synopsis("Symbolic Forward Oversubscription Top-q Search", "");
++    symbolic::SymbolicSearch::add_options_to_parser(parser);
++    parser.add_option<shared_ptr<symbolic::PlanSelector>>(
++        "plan_selection", "plan selection strategy");
++    parser.add_option<double>("quality", "relative quality multiplier",
++                              "infinity", Bounds("1.0", "infinity"));
++    Options opts = parser.parse();
++
++    shared_ptr<symbolic::SymbolicSearch> engine = nullptr;
++    if (!parser.dry_run()) {
++        engine = make_shared<symbolic::SymbolicOspTopkSearch>(opts);
++        utils::g_log << "Symbolic Forward Oversubscription Top-q Search" << endl;
++    }
++
++    return engine;
++}
++
++static Plugin<SearchEngine> _plugin_sym_fw_top_k_osp("symk-osp-fw",
++                                                     _parse_forward_top_k_osp);
++
++static Plugin<SearchEngine> _plugin_sym_fw_top_q_osp("symq-osp-fw",
++                                                     _parse_forward_top_q_osp);
+diff --git a/src/search/symbolic/search_engines/symbolic_osp_top_k_search.h b/src/search/symbolic/search_engines/symbolic_osp_top_k_search.h
+new file mode 100644
+index 000000000..0c5aa42c6
+--- /dev/null
++++ b/src/search/symbolic/search_engines/symbolic_osp_top_k_search.h
+@@ -0,0 +1,38 @@
++#ifndef SYMBOLIC_SEARCH_ENGINES_SYMBOLIC_OSP_TOP_K_SEARCH_H
++#define SYMBOLIC_SEARCH_ENGINES_SYMBOLIC_OSP_TOP_K_SEARCH_H
++
++#include "symbolic_osp_search.h"
++
++#include <map>
++
++namespace symbolic {
++class SymbolicOspTopkSearch : public SymbolicOspSearch {
++private:
++    int get_quality_bound() {
++        if (quality_multiplier == std::numeric_limits<double>::infinity())
++            return -std::numeric_limits<int>::max();
++        // negative utility
++        if (highest_seen_utility < 0)
++            return highest_seen_utility * quality_multiplier;
++        return ceil(highest_seen_utility / quality_multiplier);
++    }
++
++protected:
++    virtual void initialize() override;
++    virtual SearchStatus step() override;
++    virtual std::vector<SymSolutionCut> get_all_util_solutions(const SymSolutionCut &sol);
++
++    // Let u be the cost of the utility of the best found plan
++    // We want all plans with utility scaled by quality_multiplier
++    // see get_quality_bound()
++    double quality_multiplier;
++
++public:
++    SymbolicOspTopkSearch(const options::Options &opts);
++    virtual ~SymbolicOspTopkSearch() = default;
++
++    virtual void new_solution(const SymSolutionCut &sol) override;
++};
++}
++
++#endif
+diff --git a/src/search/symbolic/search_engines/symbolic_search.cc b/src/search/symbolic/search_engines/symbolic_search.cc
+index f4f6c1efe..10a989b60 100644
+--- a/src/search/symbolic/search_engines/symbolic_search.cc
++++ b/src/search/symbolic/search_engines/symbolic_search.cc
+@@ -31,7 +31,7 @@ SymbolicSearch::SymbolicSearch(const options::Options &opts)
+       step_num(-1),
+       lower_bound_increased(true),
+       lower_bound(0),
+-      upper_bound(numeric_limits<int>::max()),
++      upper_bound(bound),
+       min_g(0),
+       plan_data_base(opts.get<shared_ptr<PlanSelector>>("plan_selection")),
+       solution_registry(make_shared<SymSolutionRegistry>()),
+@@ -95,14 +95,14 @@ SearchStatus SymbolicSearch::step() {
+ 
+     // Search finished!
+     if (lower_bound >= upper_bound) {
+-        solution_registry->construct_cheaper_solutions(
++        solution_registry->construct_better_cost_solutions(
+             numeric_limits<int>::max());
+         solution_found = plan_data_base->get_num_reported_plan() > 0;
+         cur_status = solution_found ? SOLVED : FAILED;
+     } else {
+         // Bound increased => construct plans
+         if (lower_bound_increased) {
+-            solution_registry->construct_cheaper_solutions(lower_bound);
++            solution_registry->construct_better_cost_solutions(lower_bound);
+         }
+ 
+         // All plans found
+diff --git a/src/search/symbolic/search_engines/symbolic_uniform_cost_search.cc b/src/search/symbolic/search_engines/symbolic_uniform_cost_search.cc
+index ae993d7a2..1238ae938 100644
+--- a/src/search/symbolic/search_engines/symbolic_uniform_cost_search.cc
++++ b/src/search/symbolic/search_engines/symbolic_uniform_cost_search.cc
+@@ -54,7 +54,13 @@ void SymbolicUniformCostSearch::initialize() {
+ 
+ SymbolicUniformCostSearch::SymbolicUniformCostSearch(
+     const options::Options &opts, bool fw, bool bw)
+-    : SymbolicSearch(opts), fw(fw), bw(bw) {}
++    : SymbolicSearch(opts), fw(fw), bw(bw) {
++    if (is_oversubscribed) {
++        cerr << "error: ordinary symbolic search does not support oversubscribed tasks. "
++             << "Please use symbolic search for osp, e.g., sym-osp-fw()." << endl;
++        utils::exit_with(utils::ExitCode::SEARCH_INPUT_ERROR);
++    }
++}
+ 
+ void SymbolicUniformCostSearch::new_solution(const SymSolutionCut &sol) {
+     if (!solution_registry->found_all_plans() && sol.get_f() < upper_bound) {
+diff --git a/src/search/symbolic/search_engines/top_q_symbolic_uniform_cost_search.cc b/src/search/symbolic/search_engines/top_q_symbolic_uniform_cost_search.cc
+index 7c00d9b0b..f7d9b0dc7 100644
+--- a/src/search/symbolic/search_engines/top_q_symbolic_uniform_cost_search.cc
++++ b/src/search/symbolic/search_engines/top_q_symbolic_uniform_cost_search.cc
+@@ -43,13 +43,13 @@ SearchStatus TopqSymbolicUniformCostSearch::step() {
+ 
+     // Search finished!
+     if (lower_bound >= upper_bound) {
+-        solution_registry->construct_cheaper_solutions(upper_bound);
++        solution_registry->construct_better_cost_solutions(upper_bound);
+         solution_found = plan_data_base->get_num_reported_plan() > 0;
+         cur_status = solution_found ? SOLVED : FAILED;
+     } else {
+         // Bound increade => construct plans
+         if (lower_bound_increased) {
+-            solution_registry->construct_cheaper_solutions(lower_bound);
++            solution_registry->construct_better_cost_solutions(lower_bound);
+         }
+ 
+         // All plans found
+diff --git a/src/search/symbolic/search_engines/top_q_symbolic_uniform_cost_search.h b/src/search/symbolic/search_engines/top_q_symbolic_uniform_cost_search.h
+index fc7efa2b3..4802b3e58 100644
+--- a/src/search/symbolic/search_engines/top_q_symbolic_uniform_cost_search.h
++++ b/src/search/symbolic/search_engines/top_q_symbolic_uniform_cost_search.h
+@@ -7,7 +7,7 @@ namespace symbolic {
+ class TopqSymbolicUniformCostSearch : public TopkSymbolicUniformCostSearch {
+ private:
+     double get_quality_bound() {
+-        return solution_registry->cheapest_solution_cost_found() *
++        return solution_registry->best_solution_found() *
+                quality_multiplier;
+     }
+ 
+diff --git a/src/search/symbolic/searches/osp_cost_search.cc b/src/search/symbolic/searches/osp_cost_search.cc
+new file mode 100644
+index 000000000..78b15df97
+--- /dev/null
++++ b/src/search/symbolic/searches/osp_cost_search.cc
+@@ -0,0 +1,10 @@
++#include "osp_cost_search.h"
++#include "../closed_list.h"
++
++namespace symbolic {
++void OspCostSearch::filterFrontier() {
++    frontier.filter(closed->getClosed());
++    mgr->filterMutex(frontier.bucket(), fw, initialization());
++    removeZero(frontier.bucket());
++}
++}
+diff --git a/src/search/symbolic/searches/osp_cost_search.h b/src/search/symbolic/searches/osp_cost_search.h
+new file mode 100644
+index 000000000..d721edd67
+--- /dev/null
++++ b/src/search/symbolic/searches/osp_cost_search.h
+@@ -0,0 +1,18 @@
++#ifndef SYMBOLIC_SEARCHES_OSP_COST_SEARCH_H
++#define SYMBOLIC_SEARCHES_OSP_COST_SEARCH_H
++
++#include "uniform_cost_search.h"
++
++namespace symbolic {
++class OspCostSearch : public UniformCostSearch {
++protected:
++
++    virtual void filterFrontier() override;
++
++public:
++    OspCostSearch(SymbolicSearch *eng, const SymParamsSearch &params)
++        : UniformCostSearch(eng, params) {}
++};
++}
++
++#endif
+diff --git a/src/search/symbolic/searches/top_k_uniform_cost_search.cc b/src/search/symbolic/searches/top_k_uniform_cost_search.cc
+index b984bb7a0..6ffc49b95 100644
+--- a/src/search/symbolic/searches/top_k_uniform_cost_search.cc
++++ b/src/search/symbolic/searches/top_k_uniform_cost_search.cc
+@@ -21,8 +21,8 @@ bool TopkUniformCostSearch::provable_no_more_plans() {
+     return open_list.empty();
+ }
+ 
+-void TopkUniformCostSearch::checkFrontierCut(Bucket &bucket, int g) {
+-    for (BDD &bucketBDD : bucket) {
++void TopkUniformCostSearch::checkFrontierCut(const Bucket &bucket, int g) {
++    for (BDD bucketBDD : bucket) {
+         auto all_sols =
+             perfectHeuristic->getAllCuts(bucketBDD, g, fw, engine->getMinG());
+         for (auto &sol : all_sols) {
+diff --git a/src/search/symbolic/searches/top_k_uniform_cost_search.h b/src/search/symbolic/searches/top_k_uniform_cost_search.h
+index 0cea017b1..79896242d 100644
+--- a/src/search/symbolic/searches/top_k_uniform_cost_search.h
++++ b/src/search/symbolic/searches/top_k_uniform_cost_search.h
+@@ -8,7 +8,7 @@ class TopkUniformCostSearch : public UniformCostSearch {
+ protected:
+     virtual bool provable_no_more_plans() override;
+ 
+-    virtual void checkFrontierCut(Bucket &bucket, int g) override;
++    virtual void checkFrontierCut(const Bucket &bucket, int g) override;
+ 
+     virtual void filterFrontier() override;
+ 
+diff --git a/src/search/symbolic/searches/uniform_cost_search.cc b/src/search/symbolic/searches/uniform_cost_search.cc
+index 329529e02..3ca17c73f 100644
+--- a/src/search/symbolic/searches/uniform_cost_search.cc
++++ b/src/search/symbolic/searches/uniform_cost_search.cc
+@@ -58,18 +58,16 @@ bool UniformCostSearch::init(shared_ptr<SymStateSpaceManager> manager,
+     return true;
+ }
+ 
+-void UniformCostSearch::checkFrontierCut(Bucket &bucket, int g) {
++void UniformCostSearch::checkFrontierCut(const Bucket &bucket, int g) {
+     if (p.get_non_stop()) {
+         return;
+     }
+ 
+-    for (BDD &bucketBDD : bucket) {
++    for (BDD bucketBDD : bucket) {
+         auto sol = perfectHeuristic->getCheapestCut(bucketBDD, g, fw);
+         if (sol.get_f() >= 0) {
+             engine->new_solution(sol);
+         }
+-        // Prune everything closed in opposite direction
+-        bucketBDD *= perfectHeuristic->notClosed();
+     }
+ }
+ 
+@@ -110,7 +108,8 @@ bool UniformCostSearch::prepareBucket() {
+ // This procedure is delayed in comparision to explicit search
+ // Idea: no need to "change" BDDs until we actually process them
+ void UniformCostSearch::filterFrontier() {
+-    frontier.filter(!closed->notClosed());
++    frontier.filter(perfectHeuristic->getClosed());
++    frontier.filter(closed->getClosed());
+     mgr->filterMutex(frontier.bucket(), fw, initialization());
+     removeZero(frontier.bucket());
+ }
+diff --git a/src/search/symbolic/searches/uniform_cost_search.h b/src/search/symbolic/searches/uniform_cost_search.h
+index de2924b08..5b86939b4 100644
+--- a/src/search/symbolic/searches/uniform_cost_search.h
++++ b/src/search/symbolic/searches/uniform_cost_search.h
+@@ -61,7 +61,7 @@ protected:
+     /*
+      * Check generated or closed states with other frontiers => solution check
+      */
+-    virtual void checkFrontierCut(Bucket &bucket, int g);
++    virtual void checkFrontierCut(const Bucket &bucket, int g);
+ 
+     void closeStates(Bucket &bucket, int g);
+ 
+diff --git a/src/search/symbolic/sym_state_space_manager.h b/src/search/symbolic/sym_state_space_manager.h
+index 682416118..3b5da4251 100644
+--- a/src/search/symbolic/sym_state_space_manager.h
++++ b/src/search/symbolic/sym_state_space_manager.h
+@@ -135,19 +135,16 @@ public:
+     // Methods that require of TRs initialized
+ 
+     int getMinTransitionCost() const {
+-        assert(!transitions.empty());
+         return min_transition_cost;
+     }
+ 
+     int getAbsoluteMinTransitionCost() const {
+-        assert(!transitions.empty());
+         if (hasTR0)
+             return 0;
+         return min_transition_cost;
+     }
+ 
+     bool hasTransitions0() const {
+-        assert(!transitions.empty());
+         return hasTR0;
+     }
+ 
+diff --git a/src/search/symbolic/sym_utils.cc b/src/search/symbolic/sym_utils.cc
+index b86b30a9b..6d80db0de 100644
+--- a/src/search/symbolic/sym_utils.cc
++++ b/src/search/symbolic/sym_utils.cc
+@@ -1,5 +1,7 @@
+ #include "sym_utils.h"
+ 
++using namespace std;
++
+ namespace symbolic {
+ TransitionRelation mergeTR(TransitionRelation tr, const TransitionRelation &tr2,
+                            int maxSize) {
+@@ -13,4 +15,32 @@ BDD mergeAndBDD(const BDD &bdd, const BDD &bdd2, int maxSize) {
+ BDD mergeOrBDD(const BDD &bdd, const BDD &bdd2, int maxSize) {
+     return bdd.Or(bdd2, maxSize);
+ }
++
++void partition_add_to_bdds(SymVariables *vars, ADD add, map<double, BDD> &res) {
++    assert(res.empty());
++    ADD cur_add = add;
++    double min_value = Cudd_V(cur_add.FindMin().getNode());
++
++    ADD inf = vars->constant(numeric_limits<double>::infinity());
++    while (cur_add != inf) {
++        res[min_value] = cur_add.BddInterval(min_value, min_value);
++        cur_add = cur_add.Maximum(res[min_value].Add() * inf);
++        min_value = Cudd_V(cur_add.FindMin().getNode());
++    }
++}
++
++void partition_add_to_bdds(SymVariables *vars, ADD add, map<int, BDD> &res) {
++    assert(res.empty());
++    ADD cur_add = add;
++    double min_value = Cudd_V(cur_add.FindMin().getNode());
++
++    ADD inf = vars->constant(numeric_limits<double>::infinity());
++    while (cur_add != inf) {
++        int int_min_value = round(min_value);
++        res[int_min_value] = cur_add.BddInterval(min_value, min_value);
++        // vars->to_dot(res[int_min_value], "bdd_" + to_string(int_min_value) + "_util.dot");
++        cur_add = cur_add + (res[int_min_value].Add() * inf);
++        min_value = Cudd_V(cur_add.FindMin().getNode());
++    }
++}
+ }
+diff --git a/src/search/symbolic/sym_utils.h b/src/search/symbolic/sym_utils.h
+index 0c1f67095..52cb3574b 100644
+--- a/src/search/symbolic/sym_utils.h
++++ b/src/search/symbolic/sym_utils.h
+@@ -130,5 +130,8 @@ BDD mergeAndBDD(const BDD &bdd, const BDD &bdd2, int maxSize);
+ BDD mergeOrBDD(const BDD &bdd, const BDD &bdd2, int maxSize);
+ 
+ inline std::string dirname(bool fw) {return fw ? "fw" : "bw";}
++
++void partition_add_to_bdds(SymVariables *vars, ADD add, std::map<double, BDD> &res);
++void partition_add_to_bdds(SymVariables *vars, ADD add, std::map<int, BDD> &res);
+ }
+ #endif
+diff --git a/src/search/task_proxy.h b/src/search/task_proxy.h
+index 58ac4b746..6f60d735d 100644
+--- a/src/search/task_proxy.h
++++ b/src/search/task_proxy.h
+@@ -32,6 +32,8 @@ class PreconditionsProxy;
+ class State;
+ class StateRegistry;
+ class TaskProxy;
++class UtilitiesProxy;
++class UtilityProxy;
+ class VariableProxy;
+ class VariablesProxy;
+ 
+@@ -553,6 +555,72 @@ public:
+     }
+ };
+ 
++class UtilityProxy {
++    const AbstractTask *task;
++    FactPair fact;
++    int util;
++public:
++    UtilityProxy(const AbstractTask &task, int var_id, int var_val, int util);
++    UtilityProxy(const AbstractTask &task, const std::pair<FactPair, int> &util);
++    ~UtilityProxy() = default;
++
++    VariableProxy get_variable() const {
++        return VariableProxy(*task, fact.var);
++    }
++
++    int get_var_value() const {
++        return fact.value;
++    }
++
++    FactPair get_fact_pair() const {
++        return fact;
++    }
++
++    std::string get_fact_name() const {
++        return task->get_fact_name(fact);
++    }
++
++    int get_utility() const {
++        return util;
++    }
++
++    bool operator==(const UtilityProxy &other) const {
++        assert(task == other.task);
++        return fact == other.fact && util == other.util;
++    }
++
++    bool operator!=(const UtilityProxy &other) const {
++        return !(*this == other);
++    }
++
++    bool is_mutex(const UtilityProxy &other) const {
++        return task->are_facts_mutex(fact, other.fact);
++    }
++};
++
++class UtilitiesProxy {
++protected:
++    const AbstractTask *task;
++public:
++    using ItemType = UtilityProxy;
++    explicit UtilitiesProxy(const AbstractTask &task)
++        : task(&task) {}
++    virtual ~UtilitiesProxy() = default;
++
++    virtual std::size_t size() const {
++        return task->get_num_utilties();
++    }
++
++    virtual UtilityProxy operator[](std::size_t index) const {
++        assert(index < size());
++        return UtilityProxy(*task, task->get_utility(index));
++    }
++
++    bool empty() const {
++        return size() == 0;
++    }
++};
++
+ 
+ bool does_fire(const EffectProxy &effect, const State &state);
+ 
+@@ -685,6 +753,18 @@ public:
+         return GoalsProxy(*task);
+     }
+ 
++    UtilitiesProxy get_utilities() const {
++        return UtilitiesProxy(*task);
++    }
++
++    int get_constant_utility() const {
++        return task->get_constant_utility();
++    }
++
++    int get_plan_cost_bound() const {
++        return task->get_plan_cost_bound();
++    }
++
+     State create_state(std::vector<int> &&state_values) const {
+         return State(*task, std::move(state_values));
+     }
+@@ -742,6 +822,16 @@ inline FactProxy::FactProxy(const AbstractTask &task, int var_id, int value)
+     : FactProxy(task, FactPair(var_id, value)) {
+ }
+ 
++inline UtilityProxy::UtilityProxy(const AbstractTask &task, int var_id, int var_val, int util)
++    :    task(&task), fact(var_id, var_val), util(util) {
++    assert(fact.var >= 0 && fact.var < task.get_num_variables());
++    assert(fact.value >= 0 && fact.value < get_variable().get_domain_size());
++}
++
++inline UtilityProxy::UtilityProxy(const AbstractTask &task, const std::pair<FactPair, int> &util)
++    : UtilityProxy(task, util.first.var, util.first.value, util.second) {
++}
++
+ 
+ inline VariableProxy FactProxy::get_variable() const {
+     return VariableProxy(*task, fact.var);
+diff --git a/src/search/task_utils/task_properties.cc b/src/search/task_utils/task_properties.cc
+index 85ae16543..dddbc2af7 100644
+--- a/src/search/task_utils/task_properties.cc
++++ b/src/search/task_utils/task_properties.cc
+@@ -13,6 +13,11 @@ using utils::ExitCode;
+ 
+ 
+ namespace task_properties {
++bool is_oversubscribed(TaskProxy task) {
++    // If the plan cost bound is -1 we have a classical task
++    return task.get_plan_cost_bound() != -1;
++}
++
+ bool is_unit_cost(TaskProxy task) {
+     for (OperatorProxy op : task.get_operators()) {
+         if (op.get_cost() != 1)
+diff --git a/src/search/task_utils/task_properties.h b/src/search/task_utils/task_properties.h
+index f53d34997..e23ed18ea 100644
+--- a/src/search/task_utils/task_properties.h
++++ b/src/search/task_utils/task_properties.h
+@@ -23,6 +23,13 @@ inline bool is_goal_state(TaskProxy task, const State &state) {
+     return true;
+ }
+ 
++/*
++  Return true if utilites and a cost bound are present
++  Runtime: O(1)
++*/
++
++extern bool is_oversubscribed(TaskProxy task);
++
+ /*
+   Return true iff all operators have cost 1.
+ 
+diff --git a/src/search/tasks/delegating_task.cc b/src/search/tasks/delegating_task.cc
+index 0cedb705e..373fc75b5 100644
+--- a/src/search/tasks/delegating_task.cc
++++ b/src/search/tasks/delegating_task.cc
+@@ -108,6 +108,22 @@ vector<MutexGroup> DelegatingTask::get_mutex_groups() const {
+     return parent->get_mutex_groups();
+ }
+ 
++int DelegatingTask::get_num_utilties() const {
++    return parent->get_num_utilties();
++}
++
++pair<FactPair, int> DelegatingTask::get_utility(int index) const {
++    return parent->get_utility(index);
++}
++
++int DelegatingTask::get_constant_utility() const {
++    return parent->get_constant_utility();
++}
++
++int DelegatingTask::get_plan_cost_bound() const {
++    return parent->get_plan_cost_bound();
++}
++
+ void DelegatingTask::convert_ancestor_state_values(
+     vector<int> &values, const AbstractTask *ancestor_task) const {
+     if (this == ancestor_task) {
+diff --git a/src/search/tasks/delegating_task.h b/src/search/tasks/delegating_task.h
+index 31a52e020..7a06d6da1 100644
+--- a/src/search/tasks/delegating_task.h
++++ b/src/search/tasks/delegating_task.h
+@@ -3,6 +3,7 @@
+ 
+ #include "../abstract_task.h"
+ 
++#include <map>
+ #include <memory>
+ #include <string>
+ #include <utility>
+@@ -58,6 +59,11 @@ public:
+     virtual std::vector<int> get_initial_state_values() const override;
+     virtual std::vector<MutexGroup> get_mutex_groups() const override;
+ 
++    virtual int get_num_utilties() const override;
++    virtual std::pair<FactPair, int> get_utility(int index) const override;
++    virtual int get_constant_utility() const override;
++    virtual int get_plan_cost_bound() const override;
++
+     virtual void convert_ancestor_state_values(
+         std::vector<int> &values,
+         const AbstractTask *ancestor_task) const final override;
+diff --git a/src/search/tasks/root_task.cc b/src/search/tasks/root_task.cc
+index af9efb4ef..85d7c007d 100644
+--- a/src/search/tasks/root_task.cc
++++ b/src/search/tasks/root_task.cc
+@@ -9,6 +9,7 @@
+ 
+ #include <algorithm>
+ #include <cassert>
++#include <map>
+ #include <memory>
+ #include <set>
+ #include <unordered_set>
+@@ -64,6 +65,11 @@ class RootTask : public AbstractTask {
+     vector<int> initial_state_values;
+     vector<FactPair> goals;
+ 
++    // OSP data
++    vector<pair<FactPair, int>> utilities;
++    int constant_utility;
++    int plan_cost_bound;
++
+     const ExplicitVariable &get_variable(int var) const;
+     const ExplicitEffect &get_effect(int op_id, int effect_id, bool is_axiom) const;
+     const ExplicitOperator &get_operator_or_axiom(int index, bool is_axiom) const;
+@@ -107,6 +113,10 @@ public:
+ 
+     virtual vector<int> get_initial_state_values() const override;
+     virtual vector<MutexGroup> get_mutex_groups() const override;
++    virtual int get_num_utilties() const override;
++    virtual pair<FactPair, int> get_utility(int index) const override;
++    virtual int get_constant_utility() const override;
++    virtual int get_plan_cost_bound() const override;
+     virtual void convert_ancestor_state_values(
+         vector<int> &values,
+         const AbstractTask *ancestor_task) const override;
+@@ -333,11 +343,60 @@ vector<FactPair> read_goal(istream &in) {
+     check_magic(in, "begin_goal");
+     vector<FactPair> goals = read_facts(in);
+     check_magic(in, "end_goal");
+-    if (goals.empty()) {
+-        cerr << "Task has no goal condition!" << endl;
++    return goals;
++}
++
++vector<pair<FactPair, int>> read_utilities(istream &in) {
++    string word;
++    in >> word;
++    vector<pair<FactPair, int>> utilities;
++    if (word != "begin_util") {
++        // set pointer back
++        in.seekg(-word.length(), ios::cur);
++        return utilities;
++    }
++    int count;
++    in >> count;
++    for (int i = 0; i < count; i++) {
++        FactPair condition = FactPair::no_fact;
++        int util;
++        in >> condition.var >> condition.value >> util;
++        utilities.emplace_back(condition, util);
++    }
++    check_magic(in, "end_util");
++    return utilities;
++}
++
++int read_constant_utility(istream &in) {
++    string word;
++    in >> word;
++    int constant_util = -1;
++    if (word != "begin_constant_util") {
++        // set pointer back
++        in.seekg(-word.length(), ios::cur);
++        return 0;
++    }
++    in >> constant_util;
++    check_magic(in, "end_constant_util");
++    return constant_util; // we use strictly smaller
++}
++
++int read_plan_cost_bound(istream &in) {
++    string word;
++    in >> word;
++    int bound = -1;
++    if (word != "begin_bound") {
++        // set pointer back
++        in.seekg(-word.length(), ios::cur);
++        return -1;
++    }
++    in >> bound;
++    if (bound < 0) {
++        cerr << "Task has negative cost bound!" << endl;
+         utils::exit_with(ExitCode::SEARCH_INPUT_ERROR);
+     }
+-    return goals;
++    check_magic(in, "end_bound");
++    return bound + 1; // we use strictly smaller
+ }
+ 
+ vector<ExplicitOperator> read_actions(
+@@ -376,6 +435,21 @@ RootTask::RootTask(istream &in) {
+ 
+     goals = read_goal(in);
+     check_facts(goals, variables);
++
++    // OSP
++    utilities = read_utilities(in);
++    for (const pair<FactPair, int> &util : utilities) {
++        check_fact(util.first, variables);
++    }
++    constant_utility = read_constant_utility(in);
++    plan_cost_bound = read_plan_cost_bound(in);
++
++    // No OSP task and empty goal
++    if (plan_cost_bound < 0 && goals.empty()) {
++        cerr << "Task has no goal condition!" << endl;
++        utils::exit_with(ExitCode::SEARCH_INPUT_ERROR);
++    }
++
+     operators = read_actions(in, false, use_metric, variables);
+     axioms = read_actions(in, true, use_metric, variables);
+     /* TODO: We should be stricter here and verify that we
+@@ -524,6 +598,22 @@ vector<MutexGroup> RootTask::get_mutex_groups() const {
+     return mutex_groups;
+ }
+ 
++int RootTask::get_num_utilties() const {
++    return utilities.size();
++}
++
++pair<FactPair, int> RootTask::get_utility(int index) const {
++    return utilities[index];
++}
++
++int RootTask::get_constant_utility() const {
++    return constant_utility;
++}
++
++int RootTask::get_plan_cost_bound() const {
++    return plan_cost_bound;
++}
++
+ void RootTask::convert_ancestor_state_values(
+     vector<int> &, const AbstractTask *ancestor_task) const {
+     if (this != ancestor_task) {
+diff --git a/src/translate/normalize.py b/src/translate/normalize.py
+index 375dc67e9..00793a743 100755
+--- a/src/translate/normalize.py
++++ b/src/translate/normalize.py
+@@ -310,6 +310,8 @@ def eliminate_existential_quantifiers_from_conditional_effects(task):
+ 
+ def substitute_complicated_goal(task):
+     goal = task.goal
++    if isinstance(goal, pddl.Truth):
++        return
+     if isinstance(goal, pddl.Literal):
+         return
+     elif isinstance(goal, pddl.Conjunction):
+diff --git a/src/translate/pddl/tasks.py b/src/translate/pddl/tasks.py
+index 2dd6073f5..bcbbe7ce0 100644
+--- a/src/translate/pddl/tasks.py
++++ b/src/translate/pddl/tasks.py
+@@ -5,6 +5,7 @@ from . import predicates
+ class Task:
+     def __init__(self, domain_name, task_name, requirements,
+                  types, objects, predicates, functions, init, goal,
++                 utility, bound,
+                  actions, axioms, use_metric):
+         self.domain_name = domain_name
+         self.task_name = task_name
+@@ -15,11 +16,16 @@ class Task:
+         self.functions = functions
+         self.init = init
+         self.goal = goal
++        self.utility = utility
++        self.bound = bound
+         self.actions = actions
+         self.axioms = axioms
+         self.axiom_counter = 0
+         self.use_min_cost_metric = use_metric
+ 
++    def is_osp_task(self):
++        return self.bound is not None
++
+     def add_axiom(self, parameters, condition):
+         name = "new-axiom@%d" % self.axiom_counter
+         self.axiom_counter += 1
+@@ -48,6 +54,12 @@ class Task:
+             print("  %s" % fact)
+         print("Goal:")
+         self.goal.dump()
++        if self.is_osp_task():
++            print("Utility:")
++            for u in self.utility:
++                print(f"  {u[0]}: {u[1]}")
++            print("Bound:")
++            print(f"  {self.bound}")
+         print("Actions:")
+         for action in self.actions:
+             action.dump()
+diff --git a/src/translate/pddl_parser/parsing_functions.py b/src/translate/pddl_parser/parsing_functions.py
+index fdc0b9dc8..2852dc8a4 100644
+--- a/src/translate/pddl_parser/parsing_functions.py
++++ b/src/translate/pddl_parser/parsing_functions.py
+@@ -295,9 +295,13 @@ def parse_axiom(alist, type_dict, predicate_dict):
+ def parse_task(domain_pddl, task_pddl):
+     domain_name, domain_requirements, types, type_dict, constants, predicates, predicate_dict, functions, actions, axioms \
+                  = parse_domain_pddl(domain_pddl)
+-    task_name, task_domain_name, task_requirements, objects, init, goal, use_metric = parse_task_pddl(task_pddl, type_dict, predicate_dict)
+-
++    task_name, task_domain_name, task_requirements, objects, init, goal, utility, bound, use_metric = parse_task_pddl(task_pddl, type_dict, predicate_dict)
+     assert domain_name == task_domain_name
++
++    # Ensure that we have either a hard goal (classical task) or a soft goal (osp task)
++    assert (
++        (goal != pddl.Truth() and not utility and not bound) or goal == pddl.Truth() and utility and bound
++    ), "We currently only support specifying a classical planning task with a hard goal using :goal, or specifying an oversubscription planning task using :utility and :bound, but not a combination."
+     requirements = pddl.Requirements(sorted(set(
+                 domain_requirements.requirements +
+                 task_requirements.requirements)))
+@@ -310,7 +314,7 @@ def parse_task(domain_pddl, task_pddl):
+ 
+     return pddl.Task(
+         domain_name, task_name, requirements, types, objects,
+-        predicates, functions, init, goal, actions, axioms, use_metric)
++        predicates, functions, init, goal, utility, bound, actions, axioms, use_metric)
+ 
+ 
+ def parse_domain_pddl(domain_pddl):
+@@ -460,8 +464,35 @@ def parse_task_pddl(task_pddl, type_dict, predicate_dict):
+     yield initial
+ 
+     goal = next(iterator)
+-    assert goal[0] == ":goal" and len(goal) == 2
+-    yield parse_condition(goal[1], type_dict, predicate_dict)
++    goal_cond = pddl.Truth()
++
++    if goal[0] == ":goal":
++        if len(goal) == 2:
++            goal_cond = parse_condition(goal[1], type_dict, predicate_dict)
++        utility = next(iterator, None)
++    else:
++        utility = goal
++
++    yield goal_cond
++
++    if utility and utility[0] == ":utility":
++        assert utility[0] == ":utility"
++        utility_list = []
++        for fact in utility[1:]:
++            assert fact[0] == "="
++            utility_atom = pddl.Atom(fact[1][0], fact[1][1:])
++            utility_value = fact[2]
++            utility_list.append((utility_atom, utility_value))
++        yield utility_list
++    else:
++        yield None
++
++    bound = next(iterator, None)
++    if bound and bound[0] == ":bound":
++        assert bound[0] == ":bound" and len(bound) == 2
++        yield bound[1]
++    else:
++        yield None
+ 
+     use_metric = False
+     for entry in iterator:
+@@ -470,6 +501,8 @@ def parse_task_pddl(task_pddl, type_dict, predicate_dict):
+                 use_metric = True
+             else:
+                 assert False, "Unknown metric."
++        elif entry[0] == ":use-cost-metric":
++            use_metric = True
+     yield use_metric
+ 
+     for entry in iterator:
+diff --git a/src/translate/sas_tasks.py b/src/translate/sas_tasks.py
+index 14db935fa..081218b35 100644
+--- a/src/translate/sas_tasks.py
++++ b/src/translate/sas_tasks.py
+@@ -11,12 +11,15 @@ class SASTask:
+     generally be sorted and mention each variable at most once. See
+     the validate methods for details."""
+ 
+-    def __init__(self, variables, mutexes, init, goal,
++    def __init__(self, variables, mutexes, init, goal, utility, constant_utility, bound,
+                  operators, axioms, metric):
+         self.variables = variables
+         self.mutexes = mutexes
+         self.init = init
+         self.goal = goal
++        self.utility = utility
++        self.constant_utility = constant_utility
++        self.bound = bound
+         self.operators = sorted(operators, key=lambda op: (
+             op.name, op.prevail, op.pre_post))
+         self.axioms = sorted(axioms, key=lambda axiom: (
+@@ -25,6 +28,9 @@ class SASTask:
+         if DEBUG:
+             self.validate()
+ 
++    def is_osp_task(self):
++        return self.bound is not None
++
+     def validate(self):
+         """Fail an assertion if the task is invalid.
+ 
+@@ -50,6 +56,7 @@ class SASTask:
+             mutex.validate(self.variables)
+         self.init.validate(self.variables)
+         self.goal.validate(self.variables)
++        self.utility.validate()
+         for op in self.operators:
+             op.validate(self.variables)
+         for axiom in self.axioms:
+@@ -67,6 +74,13 @@ class SASTask:
+         self.init.dump()
+         print("goal:")
+         self.goal.dump()
++        if self.is_osp_task():
++            print("utility:")
++            self.utility.dump()
++            print("constant_utility")
++            print("  %d" % self.constant_utility)
++            print("bound:")
++            print("  %d" % self.bound)
+         print("%d operators:" % len(self.operators))
+         for operator in self.operators:
+             operator.dump()
+@@ -88,6 +102,14 @@ class SASTask:
+             mutex.output(stream)
+         self.init.output(stream)
+         self.goal.output(stream)
++        if self.is_osp_task():
++            self.utility.output(stream)
++            print("begin_constant_util", file=stream)
++            print(self.constant_utility, file=stream)
++            print("end_constant_util", file=stream)
++            print("begin_bound", file=stream)
++            print(self.bound, file=stream)
++            print("end_bound", file=stream)
+         print(len(self.operators), file=stream)
+         for op in self.operators:
+             op.output(stream)
+@@ -101,6 +123,7 @@ class SASTask:
+         for mutex in self.mutexes:
+             task_size += mutex.get_encoding_size()
+         task_size += self.goal.get_encoding_size()
++        task_size += self.utility.get_encoding_size()
+         for op in self.operators:
+             task_size += op.get_encoding_size()
+         for axiom in self.axioms:
+@@ -226,6 +249,32 @@ class SASInit:
+         print("end_state", file=stream)
+ 
+ 
++class SASUtil:
++    def __init__(self, values):
++        self.triplets = sorted(values)
++
++    def __repr__(self) -> str:
++        return str(self.triplets)
++
++    def validate(self):
++        """ Assert that the utility is not empty."""
++        assert self.triplets
++
++    def dump(self):
++        for var, val, u in self.triplets:
++            print("v%d: %d = %d" % (var, val, u))
++
++    def output(self, stream):
++        print("begin_util", file=stream)
++        print(len(self.triplets), file=stream)
++        for var, val, u in self.triplets:
++            print(var, val, u, file=stream)
++        print("end_util", file=stream)
++
++    def get_encoding_size(self):
++        return len(self.triplets)
++
++
+ class SASGoal:
+     def __init__(self, pairs):
+         self.pairs = sorted(pairs)
+@@ -264,6 +313,7 @@ class SASOperator:
+         def tuplify(entry):
+             var, pre, post, cond = entry
+             return var, pre, post, tuple(cond)
++
+         def listify(entry):
+             var, pre, post, cond = entry
+             return var, pre, post, list(cond)
+@@ -407,7 +457,6 @@ class SASAxiom:
+             assert val >= 0, condition
+ 
+     def validate(self, variables, init):
+-
+         """Validate the axiom.
+ 
+         Assert that the axiom condition is a valid condition, that the
+@@ -439,8 +488,8 @@ class SASAxiom:
+         eff_layer = variables.axiom_layers[eff_var]
+         assert eff_layer >= 0
+         eff_init_value = init.values[eff_var]
+-        ## The following rule is currently commented out because of
+-        ## the TODO/bug mentioned in the docstring.
++        # The following rule is currently commented out because of
++        # the TODO/bug mentioned in the docstring.
+         # assert eff_value != eff_init_value
+         for cond_var, cond_value in self.condition:
+             cond_layer = variables.axiom_layers[cond_var]
+@@ -448,9 +497,9 @@ class SASAxiom:
+                 assert cond_layer <= eff_layer
+                 if cond_layer == eff_layer:
+                     cond_init_value = init.values[cond_var]
+-                    ## Once the TODO/bug above is addressed, the
+-                    ## following four lines can be simplified because
+-                    ## we are guaranteed to land in the "if" branch.
++                    # Once the TODO/bug above is addressed, the
++                    # following four lines can be simplified because
++                    # we are guaranteed to land in the "if" branch.
+                     if eff_value != eff_init_value:
+                         assert cond_value != cond_init_value
+                     else:
+diff --git a/src/translate/simplify.py b/src/translate/simplify.py
+index 43236814b..4934568e2 100644
+--- a/src/translate/simplify.py
++++ b/src/translate/simplify.py
+@@ -156,15 +156,19 @@ def build_dtgs(task):
+ always_false = object()
+ always_true = object()
+ 
++
+ class Impossible(Exception):
+     pass
+ 
++
+ class TriviallySolvable(Exception):
+     pass
+ 
++
+ class DoesNothing(Exception):
+     pass
+ 
++
+ class VarValueRenaming:
+     def __init__(self):
+         self.new_var_nos = []   # indexed by old var_no
+@@ -230,9 +234,21 @@ class VarValueRenaming:
+         self.apply_to_mutexes(task.mutexes)
+         self.apply_to_init(task.init)
+         self.apply_to_goals(task.goal.pairs)
++        self.apply_to_utils(task)
++        if task.is_osp_task() and self.is_trivial_unsolvable(task.utility.triplets):
++            raise TriviallySolvable
++        elif not task.is_osp_task() and self.is_trivial_unsolvable(task.goal.pairs):
++            raise TriviallySolvable
+         self.apply_to_operators(task.operators)
+         self.apply_to_axioms(task.axioms)
+ 
++    def is_trivial_unsolvable(self, goals):
++        # We raise an exception because we do not consider a SAS+
++        # task without goals well-formed. Our callers are supposed
++        # to catch this and replace the task with a well-formed
++        # trivially solvable task.
++        return not goals
++
+     def apply_to_variables(self, variables):
+         variables.ranges = self.new_sizes
+         new_axiom_layers = [None] * self.new_var_count
+@@ -256,7 +272,8 @@ class VarValueRenaming:
+                         print("Removed false proposition: %s" % value_name)
+                 else:
+                     new_value_names[new_var_no][new_value] = value_name
+-        assert all((None not in value_names) for value_names in new_value_names)
++        assert all((None not in value_names)
++                   for value_names in new_value_names)
+         value_names[:] = new_value_names
+ 
+     def apply_to_mutexes(self, mutexes):
+@@ -266,7 +283,7 @@ class VarValueRenaming:
+             for var, val in mutex.facts:
+                 new_var_no, new_value = self.translate_pair((var, val))
+                 if (new_value is not always_true and
+-                    new_value is not always_false):
++                        new_value is not always_false):
+                     new_facts.append((new_var_no, new_value))
+             if len(new_facts) >= 2:
+                 mutex.facts = new_facts
+@@ -288,12 +305,11 @@ class VarValueRenaming:
+     def apply_to_goals(self, goals):
+         # This may propagate Impossible up.
+         self.convert_pairs(goals)
+-        if not goals:
+-            # We raise an exception because we do not consider a SAS+
+-            # task without goals well-formed. Our callers are supposed
+-            # to catch this and replace the task with a well-formed
+-            # trivially solvable task.
+-            raise TriviallySolvable
++
++    def apply_to_utils(self, task):
++        # This may propagate Impossible up.
++        if task.is_osp_task():
++            task.constant_utility += self.convert_utility_triplets(task.utility.triplets)
+ 
+     def apply_to_operators(self, operators):
+         new_operators = []
+@@ -442,7 +458,7 @@ class VarValueRenaming:
+ 
+         for cond_var, cond_value in new_cond:
+             if (cond_var in conditions_dict and
+-                conditions_dict[cond_var] != cond_value):
++                    conditions_dict[cond_var] != cond_value):
+                 # This effect condition is not compatible with
+                 # the applicability conditions.
+                 return None
+@@ -476,6 +492,34 @@ class VarValueRenaming:
+                 new_pairs.append((new_var_no, new_value))
+         pairs[:] = new_pairs
+ 
++    def translate_triplet(self, util_triplet):
++        # print(util_triplet)
++        (var_no, value, uval) = util_triplet
++        new_var_no = self.new_var_nos[var_no]
++        new_value = self.new_values[var_no][value]
++        return new_var_no, new_value, uval
++
++    def convert_utility_triplets(self, util_triplets):
++        # We call this convert_... because it is an in-place method.
++        constant_util = 0
++        new_triplets = []
++        for tr in util_triplets:
++            new_var_no, new_value, uval = self.translate_triplet(tr)
++            if new_value is always_false:
++                print(f"{tr} pruned because it is always false.")
++                # This is not valid for soft goal problems.
++                # raise Impossible
++                continue
++            elif new_value is always_true:
++                print(f"{tr} pruned because it is always true.")
++                constant_util += uval
++            else:
++                assert new_var_no is not None
++                new_triplets.append((new_var_no, new_value, uval))
++        util_triplets[:] = new_triplets
++        return constant_util
++
++
+ def build_renaming(dtgs):
+     renaming = VarValueRenaming()
+     for dtg in dtgs:
+diff --git a/src/translate/translate.py b/src/translate/translate.py
+index f42a06453..1e406f61f 100755
+--- a/src/translate/translate.py
++++ b/src/translate/translate.py
+@@ -1,37 +1,37 @@
+ #! /usr/bin/env python3
+ 
+ 
++import variable_order
++import tools
++import timers
++import simplify
++import signal
++import sas_tasks
++import pddl_parser
++import pddl
++import options
++import normalize
++import instantiate
++import fact_groups
++import axiom_rules
++from itertools import product
++from copy import deepcopy
++from collections import defaultdict
+ import os
+ import sys
+ import traceback
+ 
++
+ def python_version_supported():
+     return sys.version_info >= (3, 6)
+ 
++
+ if not python_version_supported():
+     sys.exit("Error: Translator only supports Python >= 3.6.")
+ 
+ 
+-from collections import defaultdict
+-from copy import deepcopy
+-from itertools import product
+-
+-import axiom_rules
+-import fact_groups
+-import instantiate
+-import normalize
+-import options
+-import pddl
+-import pddl_parser
+-import sas_tasks
+-import signal
+-import simplify
+-import timers
+-import tools
+-import variable_order
+-
+ # TODO: The translator may generate trivial derived variables which are always
+-# true, for example if there ia a derived predicate in the input that only
++# true, for example if there is a derived predicate in the input that only
+ # depends on (non-derived) variables which are detected as always true.
+ # Such a situation was encountered in the PSR-STRIPS-DerivedPredicates domain.
+ # Such "always-true" variables should best be compiled away, but it is
+@@ -43,8 +43,8 @@ import variable_order
+ DEBUG = False
+ 
+ 
+-## For a full list of exit codes, please see driver/returncodes.py. Here,
+-## we only list codes that are used by the translator component of the planner.
++# For a full list of exit codes, please see driver/returncodes.py. Here,
++# we only list codes that are used by the translator component of the planner.
+ TRANSLATE_OUT_OF_MEMORY = 20
+ TRANSLATE_OUT_OF_TIME = 21
+ 
+@@ -93,19 +93,19 @@ def translate_strips_conditions_aux(conditions, dictionary, ranges):
+ 
+     for fact in conditions:
+         if fact.negated:
+-            ## Note: here we use a different solution than in Sec. 10.6.4
+-            ## of the thesis. Compare the last sentences of the third
+-            ## paragraph of the section.
+-            ## We could do what is written there. As a test case,
+-            ## consider Airport ADL tasks with only one airport, where
+-            ## (occupied ?x) variables are encoded in a single variable,
+-            ## and conditions like (not (occupied ?x)) do occur in
+-            ## preconditions.
+-            ## However, here we avoid introducing new derived predicates
+-            ## by treating the negative precondition as a disjunctive
+-            ## precondition and expanding it by "multiplying out" the
+-            ## possibilities.  This can lead to an exponential blow-up so
+-            ## it would be nice to choose the behaviour as an option.
++            # Note: here we use a different solution than in Sec. 10.6.4
++            # of the thesis. Compare the last sentences of the third
++            # paragraph of the section.
++            # We could do what is written there. As a test case,
++            # consider Airport ADL tasks with only one airport, where
++            # (occupied ?x) variables are encoded in a single variable,
++            # and conditions like (not (occupied ?x)) do occur in
++            # preconditions.
++            # However, here we avoid introducing new derived predicates
++            # by treating the negative precondition as a disjunctive
++            # precondition and expanding it by "multiplying out" the
++            # possibilities.  This can lead to an exponential blow-up so
++            # it would be nice to choose the behaviour as an option.
+             done = False
+             new_condition = {}
+             atom = pddl.Atom(fact.predicate, fact.args)  # force positive
+@@ -133,7 +133,8 @@ def translate_strips_conditions_aux(conditions, dictionary, ranges):
+                 # this atom. So we need to introduce a new condition:
+                 # We can select any from new_condition and currently prefer the
+                 # smallest one.
+-                candidates = sorted(new_condition.items(), key=number_of_values)
++                candidates = sorted(new_condition.items(),
++                                    key=number_of_values)
+                 var, vals = candidates[0]
+                 condition[var] = vals
+ 
+@@ -268,7 +269,8 @@ def translate_strips_operator_aux(operator, dictionary, ranges, mutex_dict,
+                             break
+                         new_cond[cvar] = cval
+                     else:
+-                        effects_by_variable[var][none_of_those].append(new_cond)
++                        effects_by_variable[var][none_of_those].append(
++                            new_cond)
+ 
+     return build_sas_operator(operator.name, condition, effects_by_variable,
+                               operator.cost, ranges, implied_facts)
+@@ -332,21 +334,21 @@ def build_sas_operator(name, condition, effects_by_variable, cost, ranges,
+ 
+ 
+ def prune_stupid_effect_conditions(var, val, conditions, effects_on_var):
+-    ## (IF <conditions> THEN <var> := <val>) is a conditional effect.
+-    ## <var> is guaranteed to be a binary variable.
+-    ## <conditions> is in DNF representation (list of lists).
++    # (IF <conditions> THEN <var> := <val>) is a conditional effect.
++    # <var> is guaranteed to be a binary variable.
++    # <conditions> is in DNF representation (list of lists).
+     ##
+-    ## We simplify <conditions> by applying two rules:
+-    ## 1. Conditions of the form "var = dualval" where var is the
+-    ##    effect variable and dualval != val can be omitted.
+-    ##    (If var != dualval, then var == val because it is binary,
+-    ##    which means that in such situations the effect is a no-op.)
+-    ##    The condition can only be omitted if there is no effect
+-    ##    producing dualval (see issue736).
+-    ## 2. If conditions contains any empty list, it is equivalent
+-    ##    to True and we can remove all other disjuncts.
++    # We simplify <conditions> by applying two rules:
++    # 1. Conditions of the form "var = dualval" where var is the
++    # effect variable and dualval != val can be omitted.
++    # (If var != dualval, then var == val because it is binary,
++    # which means that in such situations the effect is a no-op.)
++    # The condition can only be omitted if there is no effect
++    # producing dualval (see issue736).
++    # 2. If conditions contains any empty list, it is equivalent
++    # to True and we can remove all other disjuncts.
+     ##
+-    ## returns True when anything was changed
++    # returns True when anything was changed
+     if conditions == [[]]:
+         return False  # Quick exit for common case.
+     assert val in [0, 1]
+@@ -405,7 +407,7 @@ def translate_strips_axioms(axioms, strips_to_sas, ranges, mutex_dict,
+     return result
+ 
+ 
+-def dump_task(init, goals, actions, axioms, axiom_layer_dict):
++def dump_task(init, goals, utils, bound, actions, axioms, axiom_layer_dict):
+     old_stdout = sys.stdout
+     with open("output.dump", "w") as dump_file:
+         sys.stdout = dump_file
+@@ -413,9 +415,17 @@ def dump_task(init, goals, actions, axioms, axiom_layer_dict):
+         for atom in init:
+             print(atom)
+         print()
+-        print("Goals")
+-        for goal in goals:
+-            print(goal)
++        if not utils:
++            print("Goals")
++            for goal in goals:
++                print(goal)
++        else:
++            print("Utils")
++            if utils:
++                for util in utils:
++                    print(util)
++            print("Bound")
++            print("  %s" % bound)
+         for action in actions:
+             print()
+             print("Action")
+@@ -433,7 +443,7 @@ def dump_task(init, goals, actions, axioms, axiom_layer_dict):
+ 
+ def translate_task(strips_to_sas, ranges, translation_key,
+                    mutex_dict, mutex_ranges, mutex_key,
+-                   init, goals,
++                   init, goals, utilities, bound,
+                    actions, axioms, metric, implied_facts):
+     with timers.timing("Processing axioms", block=True):
+         axioms, axiom_layer_dict = axiom_rules.handle_axioms(actions, axioms, goals,
+@@ -442,12 +452,21 @@ def translate_task(strips_to_sas, ranges, translation_key,
+     if options.dump_task:
+         # Remove init facts that don't occur in strips_to_sas: they're constant.
+         nonconstant_init = filter(strips_to_sas.get, init)
+-        dump_task(nonconstant_init, goals, actions, axioms, axiom_layer_dict)
++        dump_task(nonconstant_init, goals, utilities,
++                  bound, actions, axioms, axiom_layer_dict)
+ 
++    constant_utility = 0
+     init_values = [rang - 1 for rang in ranges]
+     # Closed World Assumption: Initialize to "range - 1" == Nothing.
+     for fact in init:
+         pairs = strips_to_sas.get(fact, [])  # empty for static init facts
++
++        # Osp task and this fact has a base utility
++        if bound is not None and len(pairs) == 0 and isinstance(fact, pddl.conditions.Atom):
++            for util in utilities:
++                if util[0] == fact:
++                    print(f"{fact} is constant with utlity {util[1]}.")
++                    constant_utility += int(util[1])
+         for var, val in pairs:
+             curr_val = init_values[var]
+             if curr_val != ranges[var] - 1 and curr_val != val:
+@@ -455,24 +474,36 @@ def translate_task(strips_to_sas, ranges, translation_key,
+             init_values[var] = val
+     init = sas_tasks.SASInit(init_values)
+ 
+-    goal_dict_list = translate_strips_conditions(goals, strips_to_sas, ranges,
+-                                                 mutex_dict, mutex_ranges)
+-    if goal_dict_list is None:
+-        # "None" is a signal that the goal is unreachable because it
+-        # violates a mutex.
+-        return unsolvable_sas_task("Goal violates a mutex")
+-
+-    assert len(goal_dict_list) == 1, "Negative goal not supported"
+-    ## we could substitute the negative goal literal in
+-    ## normalize.substitute_complicated_goal, using an axiom. We currently
+-    ## don't do this, because we don't run into this assertion, if the
+-    ## negative goal is part of finite domain variable with only two
+-    ## values, which is most of the time the case, and hence refrain from
+-    ## introducing axioms (that are not supported by all heuristics)
+-    goal_pairs = list(goal_dict_list[0].items())
+-    if not goal_pairs:
+-        return solvable_sas_task("Empty goal")
+-    goal = sas_tasks.SASGoal(goal_pairs)
++    util_values = []
++    if utilities:
++        goal = sas_tasks.SASGoal([])
++        for fact, uval in utilities:
++            pairs = strips_to_sas.get(fact, [])
++            for var, val in pairs:
++                util_values.append((var, val, int(uval)))
++    else:
++        goal_dict_list = translate_strips_conditions(goals, strips_to_sas, ranges,
++                                                     mutex_dict, mutex_ranges)
++
++        if goal_dict_list is None:
++            # "None" is a signal that the goal is unreachable because it
++            # violates a mutex.
++            return unsolvable_sas_task("Goal violates a mutex", None)
++
++        assert len(goal_dict_list) == 1, "Negative goal not supported"
++        # we could substitute the negative goal literal in
++        # normalize.substitute_complicated_goal, using an axiom. We currently
++        # don't do this, because we don't run into this assertion, if the
++        # negative goal is part of finite domain variable with only two
++        # values, which is most of the time the case, and hence refrain from
++        # introducing axioms (that are not supported by all heuristics)
++        goal_pairs = list(goal_dict_list[0].items())
++        if not goal_pairs:
++            return solvable_sas_task("Empty goal", None)
++        goal = sas_tasks.SASGoal(goal_pairs)
++
++    util = sas_tasks.SASUtil(util_values)
++    bound = int(bound) if bound else None
+ 
+     operators = translate_strips_operators(actions, strips_to_sas, ranges,
+                                            mutex_dict, mutex_ranges,
+@@ -487,11 +518,11 @@ def translate_task(strips_to_sas, ranges, translation_key,
+         axiom_layers[var] = layer
+     variables = sas_tasks.SASVariables(ranges, axiom_layers, translation_key)
+     mutexes = [sas_tasks.SASMutexGroup(group) for group in mutex_key]
+-    return sas_tasks.SASTask(variables, mutexes, init, goal,
++    return sas_tasks.SASTask(variables, mutexes, init, goal, util, constant_utility, bound,
+                              operators, axioms, metric)
+ 
+ 
+-def trivial_task(solvable):
++def trivial_task(solvable, task):
+     variables = sas_tasks.SASVariables(
+         [2], [-1], [["Atom dummy(val1)", "Atom dummy(val2)"]])
+     # We create no mutexes: the only possible mutex is between
+@@ -500,34 +531,57 @@ def trivial_task(solvable):
+     # finite-domain variable).
+     mutexes = []
+     init = sas_tasks.SASInit([0])
+-    if solvable:
+-        goal_fact = (0, 0)
++    goal = sas_tasks.SASGoal([])
++    util = sas_tasks.SASGoal([])
++    constant_utility = 0
++    bound = None
++    if task is not None and task.is_osp_task():
++        assert solvable, "OSP Tasks should always be solvable!"
++        util_fact = (0, 0, 0)
++        util = sas_tasks.SASUtil([util_fact])
++        constant_utility = task.constant_utility
++        bound = 1
+     else:
+-        goal_fact = (0, 1)
+-    goal = sas_tasks.SASGoal([goal_fact])
++        if solvable:
++            goal_fact = (0, 0)
++        else:
++            goal_fact = (0, 1)
++        goal = sas_tasks.SASGoal([goal_fact])
++
+     operators = []
+     axioms = []
+     metric = True
+-    return sas_tasks.SASTask(variables, mutexes, init, goal,
++    return sas_tasks.SASTask(variables, mutexes, init, goal, util, constant_utility, bound,
+                              operators, axioms, metric)
+ 
+-def solvable_sas_task(msg):
++
++def solvable_sas_task(msg, task):
+     print("%s! Generating solvable task..." % msg)
+-    return trivial_task(solvable=True)
++    return trivial_task(solvable=True, task=task)
+ 
+-def unsolvable_sas_task(msg):
++
++def unsolvable_sas_task(msg, task):
+     print("%s! Generating unsolvable task..." % msg)
+-    return trivial_task(solvable=False)
++    return trivial_task(solvable=False, task=task)
++
+ 
+ def pddl_to_sas(task):
++    # if task.is_osp_task() and len(task.utility) > 0:
++    #     task.goal = pddl.Conjunction([u[0] for u in task.utility]).simplified()
++
+     with timers.timing("Instantiating", block=True):
+         (relaxed_reachable, atoms, actions, goal_list, axioms,
+          reachable_action_params) = instantiate.explore(task)
+ 
+-    if not relaxed_reachable:
+-        return unsolvable_sas_task("No relaxed solution")
+-    elif goal_list is None:
+-        return unsolvable_sas_task("Trivially false goal")
++    if task.is_osp_task():
++        # task.goal = pddl.Truth()
++        goal_list = [u[0] for u in task.utility]
++
++    if not task.is_osp_task():
++        if not relaxed_reachable:
++            return unsolvable_sas_task("No relaxed solution", task)
++        elif goal_list is None:
++            return unsolvable_sas_task("Trivially false goal", task)
+ 
+     for item in goal_list:
+         assert isinstance(item, pddl.Literal)
+@@ -566,7 +620,7 @@ def pddl_to_sas(task):
+         sas_task = translate_task(
+             strips_to_sas, ranges, translation_key,
+             mutex_dict, mutex_ranges, mutex_key,
+-            task.init, goal_list, actions, axioms, task.use_min_cost_metric,
++            task.init, goal_list, task.utility, task.bound, actions, axioms, task.use_min_cost_metric,
+             implied_facts)
+ 
+     print("%d effect conditions simplified" %
+@@ -579,9 +633,9 @@ def pddl_to_sas(task):
+             try:
+                 simplify.filter_unreachable_propositions(sas_task)
+             except simplify.Impossible:
+-                return unsolvable_sas_task("Simplified to trivially false goal")
++                return unsolvable_sas_task("Simplified to trivially false goal", sas_task)
+             except simplify.TriviallySolvable:
+-                return solvable_sas_task("Simplified to empty goal")
++                return solvable_sas_task("Simplified to empty goal", sas_task)
+ 
+     if options.reorder_variables or options.filter_unimportant_vars:
+         with timers.timing("Reordering and filtering variables", block=True):
+@@ -609,26 +663,26 @@ def build_mutex_key(strips_to_sas, groups):
+ 
+ 
+ def build_implied_facts(strips_to_sas, groups, mutex_groups):
+-    ## Compute a dictionary mapping facts (FDR pairs) to lists of FDR
+-    ## pairs implied by that fact. In other words, in all states
+-    ## containing p, all pairs in implied_facts[p] must also be true.
++    # Compute a dictionary mapping facts (FDR pairs) to lists of FDR
++    # pairs implied by that fact. In other words, in all states
++    # containing p, all pairs in implied_facts[p] must also be true.
+     ##
+-    ## There are two simple cases where a pair p implies a pair q != p
+-    ## in our FDR encodings:
+-    ## 1. p and q encode the same fact
+-    ## 2. p encodes a STRIPS proposition X, q encodes a STRIPS literal
+-    ##    "not Y", and X and Y are mutex.
++    # There are two simple cases where a pair p implies a pair q != p
++    # in our FDR encodings:
++    # 1. p and q encode the same fact
++    # 2. p encodes a STRIPS proposition X, q encodes a STRIPS literal
++    # "not Y", and X and Y are mutex.
+     ##
+-    ## The first case cannot arise when we use partial encodings, and
+-    ## when we use full encodings, I don't think it would give us any
+-    ## additional information to exploit in the operator translation,
+-    ## so we only use the second case.
++    # The first case cannot arise when we use partial encodings, and
++    # when we use full encodings, I don't think it would give us any
++    # additional information to exploit in the operator translation,
++    # so we only use the second case.
+     ##
+-    ## Note that for a pair q to encode a fact "not Y", Y must form a
+-    ## fact group of size 1. We call such propositions Y "lonely".
++    # Note that for a pair q to encode a fact "not Y", Y must form a
++    # fact group of size 1. We call such propositions Y "lonely".
+ 
+-    ## In the first step, we compute a dictionary mapping each lonely
+-    ## proposition to its variable number.
++    # In the first step, we compute a dictionary mapping each lonely
++    # proposition to its variable number.
+     lonely_propositions = {}
+     for var_no, group in enumerate(groups):
+         if len(group) == 1:
+@@ -636,10 +690,10 @@ def build_implied_facts(strips_to_sas, groups, mutex_groups):
+             assert strips_to_sas[lonely_prop] == [(var_no, 0)]
+             lonely_propositions[lonely_prop] = var_no
+ 
+-    ## Then we compute implied facts as follows: for each mutex group,
+-    ## check if prop is lonely (then and only then "not prop" has a
+-    ## representation as an FDR pair). In that case, all other facts
+-    ## in this mutex group imply "not prop".
++    # Then we compute implied facts as follows: for each mutex group,
++    # check if prop is lonely (then and only then "not prop" has a
++    # representation as an FDR pair). In that case, all other facts
++    # in this mutex group imply "not prop".
+     implied_facts = defaultdict(list)
+     for mutex_group in mutex_groups:
+         for prop in mutex_group:
+@@ -661,6 +715,10 @@ def dump_statistics(sas_task):
+                if layer >= 0]))
+     print("Translator facts: %d" % sum(sas_task.variables.ranges))
+     print("Translator goal facts: %d" % len(sas_task.goal.pairs))
++    if sas_task.is_osp_task():
++        print("Translator utility facts: %d" % len(sas_task.utility.triplets))
++        print("Translator constant utility: %d" % sas_task.constant_utility)
++        print("Translator plan cost bound: %d" % sas_task.bound)
+     print("Translator mutex groups: %d" % len(sas_task.mutexes))
+     print("Translator total mutex groups size: %d" %
+           sum(mutex.get_encoding_size() for mutex in sas_task.mutexes))
+@@ -690,7 +748,6 @@ def main():
+             for index, effect in reversed(list(enumerate(action.effects))):
+                 if effect.literal.negated:
+                     del action.effects[index]
+-
+     sas_task = pddl_to_sas(task)
+     dump_statistics(sas_task)
+ 
+diff --git a/src/translate/variable_order.py b/src/translate/variable_order.py
+index 74c8f5a65..edfe5de1b 100644
+--- a/src/translate/variable_order.py
++++ b/src/translate/variable_order.py
+@@ -95,11 +95,13 @@ class CausalGraph:
+             else:
+                 self.ordering.append(scc[0])
+ 
+-    def calculate_important_vars(self, goal):
++    def calculate_important_vars(self, goals_and_utilies):
+         # Note for future refactoring: it is perhaps more idiomatic
+         # and efficient to use a set rather than a defaultdict(bool).
+         necessary = defaultdict(bool)
+-        for var, _ in goal.pairs:
++        for entry in goals_and_utilies:
++            assert len(entry) == 2 or len(entry) == 3
++            var = entry[0]
+             if not necessary[var]:
+                 necessary[var] = True
+                 self.dfs(var, necessary)
+@@ -194,6 +196,7 @@ class VariableOrder:
+         self._apply_to_variables(sas_task.variables)
+         self._apply_to_init(sas_task.init)
+         self._apply_to_goal(sas_task.goal)
++        self._apply_to_utility(sas_task.utility)
+         self._apply_to_mutexes(sas_task.mutexes)
+         self._apply_to_operators(sas_task.operators)
+         self._apply_to_axioms(sas_task.axioms)
+@@ -220,6 +223,11 @@ class VariableOrder:
+                             for var, val in goal.pairs
+                             if var in self.new_var)
+ 
++    def _apply_to_utility(self, utility):
++        utility.triplets = sorted((self.new_var[var], val, util)
++                            for var, val, util in utility.triplets
++                            if var in self.new_var)
++
+     def _apply_to_mutexes(self, mutexes):
+         new_mutexes = []
+         for group in mutexes:
+@@ -277,7 +285,7 @@ def find_and_apply_variable_order(sas_task, reorder_vars=True,
+         else:
+             order = list(range(len(sas_task.variables.ranges)))
+         if filter_unimportant_vars:
+-            necessary = cg.calculate_important_vars(sas_task.goal)
++            necessary = cg.calculate_important_vars(sas_task.goal.pairs + sas_task.utility.triplets)
+             print("%s of %s variables necessary." % (len(necessary),
+                                                      len(order)))
+             order = [var for var in order if necessary[var]]

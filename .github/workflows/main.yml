@@ -25,7 +25,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [macOS-11, macOS-latest, windows-2022]
+        os: [macOS-11, macOS-12, macos-13, windows-2022]
 
     steps:
       - uses: actions/checkout@v3
@@ -51,7 +51,7 @@ jobs:
   deploy-pypi:
     runs-on: ubuntu-latest
     needs: [build-linux, build-win-and-mac]
-    if: github.repository == 'speckdavid/up-symk' # We only deploy on the correct repo (TODO: change the repo)
+    if: ${{ (github.repository == 'speckdavid/up-symk') && (github.ref == 'refs/heads/master') }}  # We only deploy on the correct repo and branch
 
     steps:
       - uses: actions/download-artifact@master

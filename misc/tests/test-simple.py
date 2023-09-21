@@ -25,7 +25,7 @@ def test_valid_result_status(oneshot_planner_name):
     problem.add_goal(x)
     
     with OneshotPlanner(name=oneshot_planner_name) as planner:
-        result = planner.solve(problem)
+        result = planner.solve(problem, output_stream=sys.stdout)
     assert result.plan is not None
     assert result.status is PlanGenerationResultStatus.SOLVED_SATISFICING
 

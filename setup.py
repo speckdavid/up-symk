@@ -51,8 +51,8 @@ def clone_and_compile_symk():
     os.chdir("up_symk/symk")
     if SYMK_RELEASE is None:
         subprocess.run(["git", "checkout", SYMK_CHANGESET])
-    print("Applying patch...")
-    subprocess.run(["git", "apply", os.path.join("..", SYMK_PATCH_NAME)])
+    #print("Applying patch...")
+    #subprocess.run(["git", "apply", os.path.join("..", SYMK_PATCH_NAME)])
     print("Building SymK (this can take some time)...")
     subprocess.run([sys.executable, "build.py"],
                            stdout = subprocess.PIPE, stderr = subprocess.PIPE,

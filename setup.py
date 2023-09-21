@@ -38,6 +38,10 @@ SYMK_PATCH_NAME = "osp_patch_file.patch"
 def clone_and_compile_symk():
     curr_dir = os.getcwd()
     print("Cloning SymK repository...")
+    for symk in ["symk", os.path.join("up_symk", "symk")]:
+        if os.path.exists(symk):
+            shutil.rmtree(symk)
+            print(f"Folder '{symk}' deleted.")
     if SYMK_RELEASE is not None:
         subprocess.run(["git", "clone", "-b", SYMK_RELEASE, SYMK_REPO])
     else:
@@ -50,7 +54,9 @@ def clone_and_compile_symk():
     print("Applying patch...")
     subprocess.run(["git", "apply", os.path.join("..", SYMK_PATCH_NAME)])
     print("Building SymK (this can take some time)...")
-    subprocess.run([sys.executable, "build.py"])
+    subprocess.run([sys.executable, "build.py"],
+                           stdout = subprocess.PIPE, stderr = subprocess.PIPE,
+                           universal_newlines = True)
     subprocess.run(["strip", "--strip-all", "builds/release/bin/downward"])
     subprocess.run(["strip", "--strip-all", "builds/release/bin/preprocess"])
     os.chdir(curr_dir)
@@ -76,7 +82,7 @@ long_description = "This package makes the [SymK](https://github.com/speckdavid/
 
 setup(
     name="up_symk",
-    version="0.0.5",
+    version="0.0.6",
     description="Unified Planning Integration of the SymK planner",
     long_description=long_description,
     long_description_content_type="text/markdown",

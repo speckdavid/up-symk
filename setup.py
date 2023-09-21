@@ -57,8 +57,8 @@ def clone_and_compile_symk():
     subprocess.run([sys.executable, "build.py"],
                            stdout = subprocess.PIPE, stderr = subprocess.PIPE,
                            universal_newlines = True)
-    subprocess.run(["strip", "--strip-all", "builds/release/bin/downward"])
-    subprocess.run(["strip", "--strip-all", "builds/release/bin/preprocess"])
+    # subprocess.run(["strip", "--strip-all", "builds/release/bin/downward"])
+    # subprocess.run(["strip", "--strip-all", "builds/release/bin/preprocess"])
     os.chdir(curr_dir)
 
 

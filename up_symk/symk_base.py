@@ -27,6 +27,7 @@ class SymKMixin(PDDLPlanner):
         self,
         symk_search_config: Optional[str] = None,
         symk_anytime_search_config: Optional[str] = None,
+        symk_driver_options: Optional[str] = None,
         symk_translate_options: Optional[List[str]] = None,
         symk_preprocess_options: Optional[List[str]] = None,
         symk_search_time_limit: Optional[str] = None,
@@ -35,6 +36,7 @@ class SymKMixin(PDDLPlanner):
         super().__init__(rewrite_bool_assignments=True)
         self._symk_search_config = symk_search_config
         self._symk_anytime_search_config = symk_anytime_search_config
+        self._symk_driver_options = symk_driver_options
         self._symk_translate_options = symk_translate_options
         self._symk_preprocess_options = symk_preprocess_options
         self._symk_search_time_limit = symk_search_time_limit
@@ -46,6 +48,8 @@ class SymKMixin(PDDLPlanner):
         downward = pkg_resources.resource_filename(__name__, "symk/fast-downward.py")
         assert sys.executable, "Path to interpreter could not be found"
         cmd = [sys.executable, downward, "--plan-file", plan_filename]
+        if self._symk_driver_options is not None:
+            cmd += self._symk_driver_options
         if self._symk_search_time_limit is not None:
             cmd += ["--search-time-limit", self._symk_search_time_limit]
         cmd += ["--log-level", self._log_level]

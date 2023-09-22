@@ -1,5 +1,6 @@
 import unified_planning as up
 from unified_planning.io import PDDLWriter
+from unified_planning.exceptions import UPUnsupportedProblemTypeError
 
 from typing import IO
 
@@ -15,35 +16,21 @@ class OspPDDLWriter(PDDLWriter):
         assert len(problem.quality_metrics) <= 2
 
         self.osp_qm = next(
-            (
-                qm
-                for qm in problem.quality_metrics
-                if isinstance(qm, up.model.metrics.Oversubscription)
-            ),
+            (qm for qm in problem.quality_metrics if isinstance(qm, up.model.metrics.Oversubscription)),
             None,
         )
 
         self.plan_cost_qm = next(
-            (
-                qm
-                for qm in problem.quality_metrics
-                if isinstance(qm, up.model.metrics.MinimizeActionCosts)
-            ),
+            (qm for qm in problem.quality_metrics if isinstance(qm, up.model.metrics.MinimizeActionCosts)),
             None,
         )
 
         self.plan_len_qm = next(
-            (
-                qm
-                for qm in problem.quality_metrics
-                if isinstance(qm, up.model.metrics.MinimizeSequentialPlanLength)
-            ),
+            (qm for qm in problem.quality_metrics if isinstance(qm, up.model.metrics.MinimizeSequentialPlanLength)),
             None,
         )
 
-        assert (
-            self.osp_qm
-        ), "OspPDDLWritter called on a problem that is Oversubscription task!"
+        assert self.osp_qm, "OspPDDLWriter called on a problem that is not an oversubscription task!"
 
         self.goals = list(self.osp_qm.goals.items())
 
@@ -74,7 +61,12 @@ class OspPDDLWriter(PDDLWriter):
         def get_util_pddl(goal):
             assert len(goal) == 2
             fact = goal[0]
-            fact_pddl = f"{fact.fluent().name} {fact.get_nary_expression_string(' ', fact.args)[1:-1]}"
+            try:
+                fact_pddl = f"{fact.fluent().name} {fact.get_nary_expression_string(' ', fact.args)[1:-1]}"
+            except:
+                raise UPUnsupportedProblemTypeError(
+                    "Symk currently only supports fluents in the oversubscribed goal description. Please use another oversubscription engine or define the oversubscribed goal definition via derived predicates that can capture complex conditions."
+                )
             return f"(= ({fact_pddl}) {goal[1]})"
 
         util_str = "(:utility"

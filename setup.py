@@ -31,7 +31,7 @@ SYMK_REPO = "https://github.com/speckdavid/symk.git"
 # SYMK_RELEASE = 'release-22.12'
 SYMK_RELEASE = None
 # CHANGESET is ignored if release is not None
-SYMK_CHANGESET = "5b1ac056eb6129e3aadb1d44b1d5653bdbce59c5"
+SYMK_CHANGESET = "c97ce836a4247c72b33acfffc8f81985c8ff9dac"
 SYMK_PATCH_NAME = "osp_patch_file.patch"
 
 
@@ -51,8 +51,8 @@ def clone_and_compile_symk():
     os.chdir("up_symk/symk")
     if SYMK_RELEASE is None:
         subprocess.run(["git", "checkout", SYMK_CHANGESET])
-    #print("Applying patch...")
-    #subprocess.run(["git", "apply", os.path.join("..", SYMK_PATCH_NAME)])
+    print("Applying patch...")
+    subprocess.run(["git", "apply", os.path.join("..", SYMK_PATCH_NAME)])
     print("Building SymK (this can take some time)...")
     subprocess.run([sys.executable, "build.py"],
                            stdout = subprocess.PIPE, stderr = subprocess.PIPE,

@@ -61,11 +61,12 @@ class OspPDDLWriter(PDDLWriter):
         def get_util_pddl(goal):
             assert len(goal) == 2
             fact = goal[0]
-            if not isinstance(fact, up.model.fluent.Fluent):
+            try:
+                fact_pddl = f"{fact.fluent().name} {fact.get_nary_expression_string(' ', fact.args)[1:-1]}"
+            except:
                 raise UPUnsupportedProblemTypeError(
                     "Symk currently only supports fluents in the oversubscribed goal description. Please use another oversubscription engine or define the oversubscribed goal definition via derived predicates that can capture complex conditions."
                 )
-            fact_pddl = f"{fact.fluent().name} {fact.get_nary_expression_string(' ', fact.args)[1:-1]}"
             return f"(= ({fact_pddl}) {goal[1]})"
 
         util_str = "(:utility"

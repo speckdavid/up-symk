@@ -1,274 +1,29 @@
 diff --git a/src/h2-preprocessor/helper_functions.cc b/src/h2-preprocessor/helper_functions.cc
-index 11024d522..69dd68999 100644
+index 11024d522..df834d981 100644
 --- a/src/h2-preprocessor/helper_functions.cc
 +++ b/src/h2-preprocessor/helper_functions.cc
-@@ -109,6 +109,48 @@ void read_axioms(istream &in, const vector<Variable *> &variables,
-         axioms.push_back(Axiom(in, variables));
+@@ -95,8 +95,20 @@ void dump_goal(const vector<pair<Variable *, int>> &goals) {
+ 
+ void read_operators(istream &in, const vector<Variable *> &variables,
+                     vector<Operator> &operators) {
++    string line_str;
++
++    // Double to move to next line
++    getline(in, line_str);
++    getline(in, line_str);
++    cout << line_str << endl;
++    if (line_str == "begin_util") {
++        cout << "Skipping the preprocessor because it does not support utilities." << endl;
++        exit(0);
++    }
++
+     int count;
+-    in >> count;
++    count = stoi(line_str);
++
+     for (int i = 0; i < count; i++)
+         operators.push_back(Operator(in, variables));
  }
- 
-+void read_utils(istream &in, const vector<Variable *> &variables, vector<tuple<Variable *, int, int>> &utils) {
-+    string word;
-+    in >> word;
-+    if (word != "begin_util") {
-+        // set pointer back
-+        in.seekg(-word.length(), std::ios::cur);
-+        return;
-+    }
-+    int count;
-+    in >> count;
-+    for (int i = 0; i < count; i++) {
-+        int varNo, val, util;
-+        in >> varNo >> val >> util;
-+        utils.push_back(make_tuple(variables[varNo], val, util));
-+    }
-+    check_magic(in, "end_util");
-+}
-+
-+void read_constant_util(istream &in, int &constant_util) {
-+    string word;
-+    in >> word;
-+    if (word != "begin_constant_util") {
-+        // set pointer back
-+        in.seekg(-word.length(), std::ios::cur);
-+        return;
-+    }
-+    in >> constant_util;
-+    check_magic(in, "end_constant_util");
-+}
-+
-+void read_bound(istream &in, int &bound) {
-+    string word;
-+    in >> word;
-+    if (word != "begin_bound") {
-+        // set pointer back
-+        in.seekg(-word.length(), std::ios::cur);
-+        return;
-+    }
-+    in >> bound;
-+    check_magic(in, "end_bound");
-+}
-+
- void read_preprocessed_problem_description(istream &in,
-                                            bool &metric,
-                                            vector<Variable> &internal_variables,
-@@ -117,13 +159,22 @@ void read_preprocessed_problem_description(istream &in,
-                                            State &initial_state,
-                                            vector<pair<Variable *, int>> &goals,
-                                            vector<Operator> &operators,
--                                           vector<Axiom> &axioms) {
-+                                           vector<Axiom> &axioms,
-+                                           vector<tuple<Variable *, int, int>> &utils,
-+                                           int &constant_util,
-+                                           int &bound) {
-     read_and_verify_version(in);
-     read_metric(in, metric);
-     read_variables(in, internal_variables, variables);
-     read_mutexes(in, mutexes, variables);
-     initial_state = State(in, variables);
-     read_goal(in, variables, goals);
-+
-+    // try to read osp things
-+    read_utils(in, variables, utils);
-+    read_constant_util(in, constant_util);
-+    read_bound(in, bound);
-+
-     read_operators(in, variables, operators);
-     read_axioms(in, variables, axioms);
- }
-@@ -202,6 +253,71 @@ void generate_cpp_input(const vector<Variable *> &ordered_vars,
- 
-     outfile.close();
- }
-+
-+void generate_cpp_osp_input(const vector<Variable *> &vars,
-+                            const bool &metric,
-+                            const vector<MutexGroup> &mutexes,
-+                            const State &initial_state,
-+                            const vector<Operator> &operators,
-+                            const vector<Axiom> &axioms,
-+                            vector<tuple<Variable *, int, int>> &utils,
-+                            int constant_util,
-+                            int bound
-+                            ) {
-+    ofstream outfile;
-+    outfile.open("output.sas", ios::out);
-+
-+    outfile << "begin_version" << endl;
-+    outfile << PRE_FILE_VERSION << endl;
-+    outfile << "end_version" << endl;
-+
-+    outfile << "begin_metric" << endl;
-+    outfile << metric << endl;
-+    outfile << "end_metric" << endl;
-+
-+    outfile << vars.size() << endl;
-+    for (Variable *var : vars)
-+        var->generate_cpp_input(outfile);
-+
-+    outfile << mutexes.size() << endl;
-+    for (const MutexGroup &mutex : mutexes)
-+        mutex.generate_cpp_input(outfile);
-+
-+    outfile << "begin_state" << endl;
-+    for (Variable *var : vars)
-+        outfile << initial_state[var] << endl;  // for axioms default value
-+    outfile << "end_state" << endl;
-+
-+    outfile << "begin_goal" << endl;
-+    outfile << "0" << endl;
-+    outfile << "end_goal" << endl;
-+
-+    outfile << "begin_util" << endl;
-+    outfile << utils.size() << endl;
-+    for (const auto &util : utils) {
-+        outfile << get<0>(util)->get_level() << " " << get<1>(util) << " " << get<2>(util) << endl;
-+    }
-+    outfile << "end_util" << endl;
-+
-+    outfile << "begin_constant_util" << endl;
-+    outfile << constant_util << endl;
-+    outfile << "end_constant_util" << endl;
-+
-+    outfile << "begin_bound" << endl;
-+    outfile << bound << endl;
-+    outfile << "end_bound" << endl;
-+
-+    outfile << operators.size() << endl;
-+    for (const Operator &op : operators)
-+        op.generate_cpp_input(outfile);
-+
-+    outfile << axioms.size() << endl;
-+    for (const Axiom &axiom : axioms)
-+        axiom.generate_cpp_input(outfile);
-+
-+    outfile.close();
-+}
-+
- void generate_unsolvable_cpp_input() {
-     ofstream outfile;
-     outfile.open("output.sas", ios::out);
-diff --git a/src/h2-preprocessor/helper_functions.h b/src/h2-preprocessor/helper_functions.h
-index cfaf2488b..25fa10e12 100644
---- a/src/h2-preprocessor/helper_functions.h
-+++ b/src/h2-preprocessor/helper_functions.h
-@@ -16,15 +16,19 @@ class Operator;
- class Axiom;
- 
- //void read_everything
--void read_preprocessed_problem_description(istream & in,
-+void read_preprocessed_problem_description(istream &in,
-                                            bool &metric,
-                                            vector<Variable> &internal_variables,
-                                            vector<Variable *> &variables,
-                                            vector<MutexGroup> &mutexes,
--                                           State & initial_state,
-+                                           State &initial_state,
-                                            vector<pair<Variable *, int>> &goals,
-                                            vector<Operator> &operators,
--                                           vector<Axiom> &axioms);
-+                                           vector<Axiom> &axioms,
-+                                           vector<tuple<Variable *, int, int>> &utils,
-+                                           int &constant_util,
-+                                           int &bound);
-+
- 
- //void dump_everything
- void dump_preprocessed_problem_description(const vector<Variable *> &variables,
-@@ -34,6 +38,7 @@ void dump_preprocessed_problem_description(const vector<Variable *> &variables,
-                                            const vector<Axiom> &axioms);
- 
- void generate_unsolvable_cpp_input();
-+
- void generate_cpp_input(const vector<Variable *> &ordered_var,
-                         const bool &metric,
-                         const vector<MutexGroup> &mutexes,
-@@ -41,6 +46,17 @@ void generate_cpp_input(const vector<Variable *> &ordered_var,
-                         const vector<pair<Variable *, int>> &goals,
-                         const vector<Operator> &operators,
-                         const vector<Axiom> &axioms);
--void check_magic(istream & in, string magic);
-+
-+void generate_cpp_osp_input(const vector<Variable *> &vars,
-+                            const bool &metric,
-+                            const vector<MutexGroup> &mutexes,
-+                            const State &initial_state,
-+                            const vector<Operator> &operators,
-+                            const vector<Axiom> &axioms,
-+                            vector<tuple<Variable *, int, int>> &utils,
-+                            int constant_util,
-+                            int bound);
-+
-+void check_magic(istream &in, string magic);
- 
- #endif
-diff --git a/src/h2-preprocessor/planner.cc b/src/h2-preprocessor/planner.cc
-index 0e40ce3e0..c1d1935e3 100644
---- a/src/h2-preprocessor/planner.cc
-+++ b/src/h2-preprocessor/planner.cc
-@@ -13,6 +13,7 @@
- #include "axiom.h"
- #include "h2_mutexes.h"
- #include "variable.h"
-+#include <cassert>
- #include <iostream>
- using namespace std;
- 
-@@ -31,6 +32,11 @@ int main(int argc, const char **argv) {
-     vector<Operator> operators;
-     vector<Axiom> axioms;
- 
-+    // osp stuff which may replace goals
-+    vector<tuple<Variable *, int, int>> utils;
-+    int constant_util = -1;
-+    int bound = -1;
-+
-     for (int i = 1; i < argc; ++i) {
-         string arg = string(argv[i]);
-         if (arg.compare("--no_rel") == 0) {
-@@ -65,10 +71,24 @@ int main(int argc, const char **argv) {
-     }
- 
-     read_preprocessed_problem_description
--        (cin, metric, internal_variables, variables, mutexes, initial_state, goals, operators, axioms);
-+        (cin, metric, internal_variables, variables, mutexes, initial_state, goals, operators, axioms, utils, constant_util, bound);
-     //dump_preprocessed_problem_description
-     //  (variables, initial_state, goals, operators, axioms);
- 
-+    assert(goals.size() == 0 || utils.size() == 0);
-+
-+    if (utils.size() > 0) {
-+        assert(goals.size() == 0);
-+        cout << "Disabling preprocessing because it does not currently support utilities." << endl;
-+        for (size_t i = 0; i < variables.size(); ++i) {
-+            variables.at(i)->set_level(i);
-+        }
-+        generate_cpp_osp_input(
-+            variables, metric, mutexes, initial_state, operators, axioms, utils, constant_util, bound);
-+        cout << "done" << endl;
-+        return 0;
-+    }
-+
-     cout << "Building causal graph..." << endl;
-     CausalGraph causal_graph(variables, operators, axioms, goals);
-     const vector<Variable *> &ordering = causal_graph.get_variable_ordering();
-@@ -81,7 +101,7 @@ int main(int argc, const char **argv) {
- 
-     // compute h2 mutexes
-     if (axioms.size() > 0) {
--        cout << "Disabling h2 analysis because it does not currently support axioms" << endl;
-+        cout << "Disabling h2 analysis because it does not currently support axioms." << endl;
-     } else if (h2_mutex_time) {
-         bool conditional_effects = false;
-         for (const Operator &op : operators) {
-@@ -224,7 +244,7 @@ int main(int argc, const char **argv) {
-         }
-     }
-     // Calculate the problem size
--    int task_size = ordering.size() + facts + goals.size();
-+    int task_size = ordering.size() + facts + goals.size() + utils.size();
- 
-     for (const MutexGroup &mutex : mutexes)
-         task_size += mutex.get_encoding_size();
 diff --git a/src/search/DownwardFiles.cmake b/src/search/DownwardFiles.cmake
 index eec2a7353..77b9b174c 100644
 --- a/src/search/DownwardFiles.cmake
@@ -533,28 +288,6 @@ index 1032430da..fbe80059d 100644
  extern DdNode *cuddConstantLookup(DdManager *table, ptruint op, DdNode *f, DdNode *g, DdNode *h);
  extern int cuddCacheProfile(DdManager *table, FILE *fp);
  extern void cuddCacheResize(DdManager *table);
-diff --git a/src/search/plan_manager.cc b/src/search/plan_manager.cc
-index efbedbd6e..21253fc36 100644
---- a/src/search/plan_manager.cc
-+++ b/src/search/plan_manager.cc
-@@ -44,7 +44,7 @@ void PlanManager::dump_plan(const Plan &plan,
-     OperatorsProxy operators = task_proxy.get_operators();
-     for (OperatorID op_id : plan) {
-         cout << operators[op_id].get_name() << " (" << operators[op_id].get_cost()
--                     << ")" << endl;
-+             << ")" << endl;
-     }
-     int plan_cost = calculate_plan_cost(plan, task_proxy);
-     utils::g_log << "Plan length: " << plan.size() << " step(s)." << endl;
-@@ -71,7 +71,7 @@ void PlanManager::save_plan(const Plan &plan, const TaskProxy &task_proxy,
-     for (OperatorID op_id : plan) {
-         if (dump_plan) {
-             cout << operators[op_id].get_name() << " (" << operators[op_id].get_cost()
--                         << ")" << endl;
-+                 << ")" << endl;
-         }
-         outfile << "(" << operators[op_id].get_name() << ")" << endl;
-     }
 diff --git a/src/search/search_engine.cc b/src/search/search_engine.cc
 index 919345d76..8354071ef 100644
 --- a/src/search/search_engine.cc
@@ -2340,7 +2073,7 @@ index 43236814b..4934568e2 100644
      renaming = VarValueRenaming()
      for dtg in dtgs:
 diff --git a/src/translate/translate.py b/src/translate/translate.py
-index f42a06453..1e406f61f 100755
+index 327771d5b..c2ce056ba 100755
 --- a/src/translate/translate.py
 +++ b/src/translate/translate.py
 @@ -1,37 +1,37 @@
@@ -2538,7 +2271,7 @@ index f42a06453..1e406f61f 100755
                     actions, axioms, metric, implied_facts):
      with timers.timing("Processing axioms", block=True):
          axioms, axiom_layer_dict = axiom_rules.handle_axioms(actions, axioms, goals,
-@@ -442,12 +452,21 @@ def translate_task(strips_to_sas, ranges, translation_key,
+@@ -443,12 +453,21 @@ def translate_task(strips_to_sas, ranges, translation_key,
      if options.dump_task:
          # Remove init facts that don't occur in strips_to_sas: they're constant.
          nonconstant_init = filter(strips_to_sas.get, init)
@@ -2561,7 +2294,7 @@ index f42a06453..1e406f61f 100755
          for var, val in pairs:
              curr_val = init_values[var]
              if curr_val != ranges[var] - 1 and curr_val != val:
-@@ -455,24 +474,36 @@ def translate_task(strips_to_sas, ranges, translation_key,
+@@ -456,24 +475,36 @@ def translate_task(strips_to_sas, ranges, translation_key,
              init_values[var] = val
      init = sas_tasks.SASInit(init_values)
  
@@ -2616,7 +2349,7 @@ index f42a06453..1e406f61f 100755
  
      operators = translate_strips_operators(actions, strips_to_sas, ranges,
                                             mutex_dict, mutex_ranges,
-@@ -487,11 +518,11 @@ def translate_task(strips_to_sas, ranges, translation_key,
+@@ -488,11 +519,11 @@ def translate_task(strips_to_sas, ranges, translation_key,
          axiom_layers[var] = layer
      variables = sas_tasks.SASVariables(ranges, axiom_layers, translation_key)
      mutexes = [sas_tasks.SASMutexGroup(group) for group in mutex_key]
@@ -2630,7 +2363,7 @@ index f42a06453..1e406f61f 100755
      variables = sas_tasks.SASVariables(
          [2], [-1], [["Atom dummy(val1)", "Atom dummy(val2)"]])
      # We create no mutexes: the only possible mutex is between
-@@ -500,34 +531,57 @@ def trivial_task(solvable):
+@@ -501,34 +532,57 @@ def trivial_task(solvable):
      # finite-domain variable).
      mutexes = []
      init = sas_tasks.SASInit([0])
@@ -2701,7 +2434,7 @@ index f42a06453..1e406f61f 100755
  
      for item in goal_list:
          assert isinstance(item, pddl.Literal)
-@@ -566,7 +620,7 @@ def pddl_to_sas(task):
+@@ -567,7 +621,7 @@ def pddl_to_sas(task):
          sas_task = translate_task(
              strips_to_sas, ranges, translation_key,
              mutex_dict, mutex_ranges, mutex_key,
@@ -2710,7 +2443,7 @@ index f42a06453..1e406f61f 100755
              implied_facts)
  
      print("%d effect conditions simplified" %
-@@ -579,9 +633,9 @@ def pddl_to_sas(task):
+@@ -580,9 +634,9 @@ def pddl_to_sas(task):
              try:
                  simplify.filter_unreachable_propositions(sas_task)
              except simplify.Impossible:
@@ -2722,7 +2455,7 @@ index f42a06453..1e406f61f 100755
  
      if options.reorder_variables or options.filter_unimportant_vars:
          with timers.timing("Reordering and filtering variables", block=True):
-@@ -609,26 +663,26 @@ def build_mutex_key(strips_to_sas, groups):
+@@ -610,26 +664,26 @@ def build_mutex_key(strips_to_sas, groups):
  
  
  def build_implied_facts(strips_to_sas, groups, mutex_groups):
@@ -2765,7 +2498,7 @@ index f42a06453..1e406f61f 100755
      lonely_propositions = {}
      for var_no, group in enumerate(groups):
          if len(group) == 1:
-@@ -636,10 +690,10 @@ def build_implied_facts(strips_to_sas, groups, mutex_groups):
+@@ -637,10 +691,10 @@ def build_implied_facts(strips_to_sas, groups, mutex_groups):
              assert strips_to_sas[lonely_prop] == [(var_no, 0)]
              lonely_propositions[lonely_prop] = var_no
  
@@ -2780,7 +2513,7 @@ index f42a06453..1e406f61f 100755
      implied_facts = defaultdict(list)
      for mutex_group in mutex_groups:
          for prop in mutex_group:
-@@ -661,6 +715,10 @@ def dump_statistics(sas_task):
+@@ -662,6 +716,10 @@ def dump_statistics(sas_task):
                 if layer >= 0]))
      print("Translator facts: %d" % sum(sas_task.variables.ranges))
      print("Translator goal facts: %d" % len(sas_task.goal.pairs))
@@ -2791,7 +2524,7 @@ index f42a06453..1e406f61f 100755
      print("Translator mutex groups: %d" % len(sas_task.mutexes))
      print("Translator total mutex groups size: %d" %
            sum(mutex.get_encoding_size() for mutex in sas_task.mutexes))
-@@ -690,7 +748,6 @@ def main():
+@@ -691,7 +749,6 @@ def main():
              for index, effect in reversed(list(enumerate(action.effects))):
                  if effect.literal.negated:
                      del action.effects[index]

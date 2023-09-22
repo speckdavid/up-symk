@@ -1496,7 +1496,7 @@ index 31a52e020..7a06d6da1 100644
          std::vector<int> &values,
          const AbstractTask *ancestor_task) const final override;
 diff --git a/src/search/tasks/root_task.cc b/src/search/tasks/root_task.cc
-index af9efb4ef..85d7c007d 100644
+index af9efb4ef..1f2f3eb2b 100644
 --- a/src/search/tasks/root_task.cc
 +++ b/src/search/tasks/root_task.cc
 @@ -9,6 +9,7 @@
@@ -1507,7 +1507,15 @@ index af9efb4ef..85d7c007d 100644
  #include <memory>
  #include <set>
  #include <unordered_set>
-@@ -64,6 +65,11 @@ class RootTask : public AbstractTask {
+@@ -20,6 +21,7 @@ using utils::ExitCode;
+ 
+ namespace tasks {
+ static const int PRE_FILE_VERSION = 3;
++static const int OSP_FILE_VERSION = 4;
+ shared_ptr<AbstractTask> g_root_task = nullptr;
+ 
+ struct ExplicitVariable {
+@@ -64,6 +66,12 @@ class RootTask : public AbstractTask {
      vector<int> initial_state_values;
      vector<FactPair> goals;
  
@@ -1515,11 +1523,12 @@ index af9efb4ef..85d7c007d 100644
 +    vector<pair<FactPair, int>> utilities;
 +    int constant_utility;
 +    int plan_cost_bound;
++    int version;
 +
      const ExplicitVariable &get_variable(int var) const;
      const ExplicitEffect &get_effect(int op_id, int effect_id, bool is_axiom) const;
      const ExplicitOperator &get_operator_or_axiom(int index, bool is_axiom) const;
-@@ -107,6 +113,10 @@ public:
+@@ -107,6 +115,10 @@ public:
  
      virtual vector<int> get_initial_state_values() const override;
      virtual vector<MutexGroup> get_mutex_groups() const override;
@@ -1530,7 +1539,28 @@ index af9efb4ef..85d7c007d 100644
      virtual void convert_ancestor_state_values(
          vector<int> &values,
          const AbstractTask *ancestor_task) const override;
-@@ -333,11 +343,60 @@ vector<FactPair> read_goal(istream &in) {
+@@ -241,17 +253,18 @@ ExplicitOperator::ExplicitOperator(istream &in, bool is_an_axiom, bool use_metri
+     assert(cost >= 0);
+ }
+ 
+-void read_and_verify_version(istream &in) {
++int read_and_verify_version(istream &in) {
+     int version;
+     check_magic(in, "begin_version");
+     in >> version;
+     check_magic(in, "end_version");
+-    if (version != PRE_FILE_VERSION) {
++    if (version != PRE_FILE_VERSION && version != OSP_FILE_VERSION) {
+         cerr << "Expected translator output file version " << PRE_FILE_VERSION
+              << ", got " << version << "." << endl
+              << "Exiting." << endl;
+         utils::exit_with(ExitCode::SEARCH_INPUT_ERROR);
+     }
++    return version;
+ }
+ 
+ bool read_metric(istream &in) {
+@@ -333,11 +346,45 @@ vector<FactPair> read_goal(istream &in) {
      check_magic(in, "begin_goal");
      vector<FactPair> goals = read_facts(in);
      check_magic(in, "end_goal");
@@ -1543,11 +1573,6 @@ index af9efb4ef..85d7c007d 100644
 +    string word;
 +    in >> word;
 +    vector<pair<FactPair, int>> utilities;
-+    if (word != "begin_util") {
-+        // set pointer back
-+        in.seekg(-word.length(), ios::cur);
-+        return utilities;
-+    }
 +    int count;
 +    in >> count;
 +    for (int i = 0; i < count; i++) {
@@ -1564,11 +1589,6 @@ index af9efb4ef..85d7c007d 100644
 +    string word;
 +    in >> word;
 +    int constant_util = -1;
-+    if (word != "begin_constant_util") {
-+        // set pointer back
-+        in.seekg(-word.length(), ios::cur);
-+        return 0;
-+    }
 +    in >> constant_util;
 +    check_magic(in, "end_constant_util");
 +    return constant_util; // we use strictly smaller
@@ -1578,11 +1598,6 @@ index af9efb4ef..85d7c007d 100644
 +    string word;
 +    in >> word;
 +    int bound = -1;
-+    if (word != "begin_bound") {
-+        // set pointer back
-+        in.seekg(-word.length(), ios::cur);
-+        return -1;
-+    }
 +    in >> bound;
 +    if (bound < 0) {
 +        cerr << "Task has negative cost bound!" << endl;
@@ -1594,21 +1609,35 @@ index af9efb4ef..85d7c007d 100644
  }
  
  vector<ExplicitOperator> read_actions(
-@@ -376,6 +435,21 @@ RootTask::RootTask(istream &in) {
+@@ -355,7 +402,7 @@ vector<ExplicitOperator> read_actions(
+ }
+ 
+ RootTask::RootTask(istream &in) {
+-    read_and_verify_version(in);
++    version = read_and_verify_version(in);
+     bool use_metric = read_metric(in);
+     variables = read_variables(in);
+     int num_variables = variables.size();
+@@ -376,6 +423,26 @@ RootTask::RootTask(istream &in) {
  
      goals = read_goal(in);
      check_facts(goals, variables);
 +
 +    // OSP
-+    utilities = read_utilities(in);
-+    for (const pair<FactPair, int> &util : utilities) {
-+        check_fact(util.first, variables);
++    if (version == OSP_FILE_VERSION) {
++        utilities = read_utilities(in);
++        for (const pair<FactPair, int> &util : utilities) {
++            check_fact(util.first, variables);
++        }
++        constant_utility = read_constant_utility(in);
++        plan_cost_bound = read_plan_cost_bound(in);
++    } else {
++        constant_utility = 0;
++        plan_cost_bound = -1;
 +    }
-+    constant_utility = read_constant_utility(in);
-+    plan_cost_bound = read_plan_cost_bound(in);
 +
 +    // No OSP task and empty goal
-+    if (plan_cost_bound < 0 && goals.empty()) {
++    if (version == PRE_FILE_VERSION && goals.empty()) {
 +        cerr << "Task has no goal condition!" << endl;
 +        utils::exit_with(ExitCode::SEARCH_INPUT_ERROR);
 +    }
@@ -1616,7 +1645,7 @@ index af9efb4ef..85d7c007d 100644
      operators = read_actions(in, false, use_metric, variables);
      axioms = read_actions(in, true, use_metric, variables);
      /* TODO: We should be stricter here and verify that we
-@@ -524,6 +598,22 @@ vector<MutexGroup> RootTask::get_mutex_groups() const {
+@@ -524,6 +591,22 @@ vector<MutexGroup> RootTask::get_mutex_groups() const {
      return mutex_groups;
  }
  
@@ -1771,27 +1800,36 @@ index fdc0b9dc8..2852dc8a4 100644
  
      for entry in iterator:
 diff --git a/src/translate/sas_tasks.py b/src/translate/sas_tasks.py
-index 14db935fa..081218b35 100644
+index 14db935fa..5ec71a628 100644
 --- a/src/translate/sas_tasks.py
 +++ b/src/translate/sas_tasks.py
-@@ -11,12 +11,15 @@ class SASTask:
+@@ -1,4 +1,5 @@
+ SAS_FILE_VERSION = 3
++OSP_SAS_FILE_VERSION = 4
+ 
+ DEBUG = False
+ 
+@@ -11,20 +12,23 @@ class SASTask:
      generally be sorted and mention each variable at most once. See
      the validate methods for details."""
  
 -    def __init__(self, variables, mutexes, init, goal,
-+    def __init__(self, variables, mutexes, init, goal, utility, constant_utility, bound,
-                  operators, axioms, metric):
+-                 operators, axioms, metric):
++    def __init__(self, variables, mutexes, init, goal, utility, constant_utility, bound, operators, axioms, metric):
          self.variables = variables
          self.mutexes = mutexes
          self.init = init
          self.goal = goal
+-        self.operators = sorted(operators, key=lambda op: (
+-            op.name, op.prevail, op.pre_post))
+-        self.axioms = sorted(axioms, key=lambda axiom: (
+-            axiom.condition, axiom.effect))
 +        self.utility = utility
 +        self.constant_utility = constant_utility
 +        self.bound = bound
-         self.operators = sorted(operators, key=lambda op: (
-             op.name, op.prevail, op.pre_post))
-         self.axioms = sorted(axioms, key=lambda axiom: (
-@@ -25,6 +28,9 @@ class SASTask:
++        self.operators = sorted(operators, key=lambda op: (op.name, op.prevail, op.pre_post))
++        self.axioms = sorted(axioms, key=lambda axiom: (axiom.condition, axiom.effect))
+         self.metric = metric
          if DEBUG:
              self.validate()
  
@@ -1801,7 +1839,7 @@ index 14db935fa..081218b35 100644
      def validate(self):
          """Fail an assertion if the task is invalid.
  
-@@ -50,6 +56,7 @@ class SASTask:
+@@ -50,6 +54,7 @@ class SASTask:
              mutex.validate(self.variables)
          self.init.validate(self.variables)
          self.goal.validate(self.variables)
@@ -1809,7 +1847,7 @@ index 14db935fa..081218b35 100644
          for op in self.operators:
              op.validate(self.variables)
          for axiom in self.axioms:
-@@ -67,6 +74,13 @@ class SASTask:
+@@ -67,6 +72,13 @@ class SASTask:
          self.init.dump()
          print("goal:")
          self.goal.dump()
@@ -1823,7 +1861,19 @@ index 14db935fa..081218b35 100644
          print("%d operators:" % len(self.operators))
          for operator in self.operators:
              operator.dump()
-@@ -88,6 +102,14 @@ class SASTask:
+@@ -77,7 +89,10 @@ class SASTask:
+ 
+     def output(self, stream):
+         print("begin_version", file=stream)
+-        print(SAS_FILE_VERSION, file=stream)
++        if self.is_osp_task():
++            print(OSP_SAS_FILE_VERSION, file=stream)
++        else:
++            print(SAS_FILE_VERSION, file=stream)
+         print("end_version", file=stream)
+         print("begin_metric", file=stream)
+         print(int(self.metric), file=stream)
+@@ -88,6 +103,14 @@ class SASTask:
              mutex.output(stream)
          self.init.output(stream)
          self.goal.output(stream)
@@ -1838,7 +1888,7 @@ index 14db935fa..081218b35 100644
          print(len(self.operators), file=stream)
          for op in self.operators:
              op.output(stream)
-@@ -101,6 +123,7 @@ class SASTask:
+@@ -101,6 +124,7 @@ class SASTask:
          for mutex in self.mutexes:
              task_size += mutex.get_encoding_size()
          task_size += self.goal.get_encoding_size()
@@ -1846,7 +1896,47 @@ index 14db935fa..081218b35 100644
          for op in self.operators:
              task_size += op.get_encoding_size()
          for axiom in self.axioms:
-@@ -226,6 +249,32 @@ class SASInit:
+@@ -121,10 +145,8 @@ class SASVariables:
+         variables must have range exactly 2. See comment on derived
+         variables in the docstring of SASTask.validate.
+         """
+-        assert len(self.ranges) == len(self.axiom_layers) == len(
+-            self.value_names)
+-        for (var_range, layer, var_value_names) in zip(
+-                self.ranges, self.axiom_layers, self.value_names):
++        assert len(self.ranges) == len(self.axiom_layers) == len(self.value_names)
++        for var_range, layer, var_value_names in zip(self.ranges, self.axiom_layers, self.value_names):
+             assert var_range == len(var_value_names)
+             assert var_range >= 2
+             assert layer == -1 or layer >= 0
+@@ -141,14 +163,13 @@ class SASVariables:
+         """Assert that the condition (list of facts) is sorted, mentions each
+         variable at most once, and only consists of valid facts."""
+         last_var = -1
+-        for (var, value) in condition:
++        for var, value in condition:
+             self.validate_fact((var, value))
+             assert var > last_var
+             last_var = var
+ 
+     def dump(self):
+-        for var, (rang, axiom_layer) in enumerate(
+-                zip(self.ranges, self.axiom_layers)):
++        for var, (rang, axiom_layer) in enumerate(zip(self.ranges, self.axiom_layers)):
+             if axiom_layer != -1:
+                 axiom_str = " [axiom layer %d]" % axiom_layer
+             else:
+@@ -157,8 +178,7 @@ class SASVariables:
+ 
+     def output(self, stream):
+         print(len(self.ranges), file=stream)
+-        for var, (rang, axiom_layer, values) in enumerate(zip(
+-                self.ranges, self.axiom_layers, self.value_names)):
++        for var, (rang, axiom_layer, values) in enumerate(zip(self.ranges, self.axiom_layers, self.value_names)):
+             print("begin_variable", file=stream)
+             print("var%d" % var, file=stream)
+             print(axiom_layer, file=stream)
+@@ -226,6 +246,32 @@ class SASInit:
          print("end_state", file=stream)
  
  
@@ -1858,7 +1948,7 @@ index 14db935fa..081218b35 100644
 +        return str(self.triplets)
 +
 +    def validate(self):
-+        """ Assert that the utility is not empty."""
++        """Assert that the utility is not empty."""
 +        assert self.triplets
 +
 +    def dump(self):
@@ -1879,7 +1969,7 @@ index 14db935fa..081218b35 100644
  class SASGoal:
      def __init__(self, pairs):
          self.pairs = sorted(pairs)
-@@ -264,6 +313,7 @@ class SASOperator:
+@@ -264,9 +310,11 @@ class SASOperator:
          def tuplify(entry):
              var, pre, post, cond = entry
              return var, pre, post, tuple(cond)
@@ -1887,7 +1977,33 @@ index 14db935fa..081218b35 100644
          def listify(entry):
              var, pre, post, cond = entry
              return var, pre, post, list(cond)
-@@ -407,7 +457,6 @@ class SASAxiom:
++
+         pre_post = map(tuplify, pre_post)
+         pre_post = sorted(set(pre_post))
+         pre_post = list(map(listify, pre_post))
+@@ -350,8 +398,7 @@ class SASOperator:
+         print("Pre/Post:")
+         for var, pre, post, cond in self.pre_post:
+             if cond:
+-                cond_str = " [%s]" % ", ".join(
+-                    ["%d: %d" % tuple(c) for c in cond])
++                cond_str = " [%s]" % ", ".join(["%d: %d" % tuple(c) for c in cond])
+             else:
+                 cond_str = ""
+             print("  v%d: %d -> %d%s" % (var, pre, post, cond_str))
+@@ -364,9 +411,9 @@ class SASOperator:
+             print(var, val, file=stream)
+         print(len(self.pre_post), file=stream)
+         for var, pre, post, cond in self.pre_post:
+-            print(len(cond), end=' ', file=stream)
++            print(len(cond), end=" ", file=stream)
+             for cvar, cval in cond:
+-                print(cvar, cval, end=' ', file=stream)
++                print(cvar, cval, end=" ", file=stream)
+             print(var, pre, post, file=stream)
+         print(self.cost, file=stream)
+         print("end_operator", file=stream)
+@@ -407,7 +454,6 @@ class SASAxiom:
              assert val >= 0, condition
  
      def validate(self, variables, init):
@@ -1895,7 +2011,7 @@ index 14db935fa..081218b35 100644
          """Validate the axiom.
  
          Assert that the axiom condition is a valid condition, that the
-@@ -439,8 +488,8 @@ class SASAxiom:
+@@ -439,8 +485,8 @@ class SASAxiom:
          eff_layer = variables.axiom_layers[eff_var]
          assert eff_layer >= 0
          eff_init_value = init.values[eff_var]
@@ -1906,7 +2022,7 @@ index 14db935fa..081218b35 100644
          # assert eff_value != eff_init_value
          for cond_var, cond_value in self.condition:
              cond_layer = variables.axiom_layers[cond_var]
-@@ -448,9 +497,9 @@ class SASAxiom:
+@@ -448,9 +494,9 @@ class SASAxiom:
                  assert cond_layer <= eff_layer
                  if cond_layer == eff_layer:
                      cond_init_value = init.values[cond_var]

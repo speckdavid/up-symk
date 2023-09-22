@@ -1,29 +1,3 @@
-diff --git a/src/h2-preprocessor/helper_functions.cc b/src/h2-preprocessor/helper_functions.cc
-index 11024d522..df834d981 100644
---- a/src/h2-preprocessor/helper_functions.cc
-+++ b/src/h2-preprocessor/helper_functions.cc
-@@ -95,8 +95,20 @@ void dump_goal(const vector<pair<Variable *, int>> &goals) {
- 
- void read_operators(istream &in, const vector<Variable *> &variables,
-                     vector<Operator> &operators) {
-+    string line_str;
-+
-+    // Double to move to next line
-+    getline(in, line_str);
-+    getline(in, line_str);
-+    cout << line_str << endl;
-+    if (line_str == "begin_util") {
-+        cout << "Skipping the preprocessor because it does not support utilities." << endl;
-+        exit(0);
-+    }
-+
-     int count;
--    in >> count;
-+    count = stoi(line_str);
-+
-     for (int i = 0; i < count; i++)
-         operators.push_back(Operator(in, variables));
- }
 diff --git a/src/search/DownwardFiles.cmake b/src/search/DownwardFiles.cmake
 index eec2a7353..77b9b174c 100644
 --- a/src/search/DownwardFiles.cmake

@@ -62,7 +62,7 @@ class OspPDDLWriter(PDDLWriter):
             assert len(goal) == 2
             fact = goal[0]
             try:
-                fact_pddl = f"{fact.fluent().name} {fact.get_nary_expression_string(' ', fact.args)[1:-1]}"
+                fact_pddl = f"{self._get_mangled_name(fact.fluent())} {fact.get_nary_expression_string(' ', fact.args)[1:-1]}"
             except:
                 raise UPUnsupportedProblemTypeError(
                     "Symk currently only supports fluents in the oversubscribed goal description. Please use another oversubscription engine or define the oversubscribed goal definition via derived predicates that can capture complex conditions."

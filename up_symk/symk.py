@@ -22,6 +22,7 @@ from unified_planning.engines.results import (
     PlanGenerationResult,
     PlanGenerationResultStatus,
 )
+from unified_planning.model.problem_kind import FEATURES
 
 # By default, on non-Windows OSs we use the first method and on Windows we
 # always use the second. It is possible to use asyncio under unix by setting
@@ -115,7 +116,10 @@ class SymKOptimalPDDLPlanner(SymKMixin, PDDLAnytimePlanner):
         supported_kind.set_actions_cost_kind("STATIC_FLUENTS_IN_ACTIONS_COST")
         supported_kind.set_quality_metrics("PLAN_LENGTH")
         supported_kind.set_quality_metrics("OVERSUBSCRIPTION")
-        # supported_kind.set_fluents_type("DERIVED_FLUENTS")
+        
+        # Attempt to set the supported fluents type of "DERIVED_FLUENTS" (depends on UP version)
+        if "FLUENTS_TYPE" in FEATURES and "DERIVED_FLUENTS" in FEATURES["FLUENTS_TYPE"]:
+            supported_kind.set_fluents_type("DERIVED_FLUENTS")
         return supported_kind
 
     @staticmethod

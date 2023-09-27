@@ -23,7 +23,20 @@ git clone git@github.com:speckdavid/unified-planning.git
 pip install unified-planning/
 ```
 
-Then install this package.
+Then install this package using pip:
+```
+pip install up-symk
+```
+
+Alternatively, you can install it locally by following these steps:
+
+Ensure you have the necessary packages to build Symk:
+
+```
+sudo apt-get -y install cmake g++ make python3 autoconf automake git
+```
+
+Clone and build the package.
 
 ```
 git clone git@github.com:aiplan4eu/up-symk.git
@@ -34,3 +47,4 @@ pip install up-symk/
 In the [notebooks folder](notebooks/), you can find two examples of how to use the SymK planner within the unified planning library.
  - [Multi-Solution Generation: Using SymK in the Unified Planning Library](https://github.com/aiplan4eu/up-symk/blob/master/notebooks/symk_usage.ipynb)
  - [Optimizing Plan Utility: Using SymK in the Unified Planning Library](https://github.com/aiplan4eu/up-symk/blob/master/notebooks/symk_osp_usage.ipynb)
+ - [Axioms and Derived Predicates in the Unified Planning Library](https://github.com/speckdavid/up-symk/blob/master/notebooks/axioms_usage.ipynb)

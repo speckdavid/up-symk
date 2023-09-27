@@ -11,11 +11,6 @@ Please note that many core functionalities have already been merged into the off
 However, it's important to be aware that the stable version 1.0.0 of unified-planning does not include all the necessary changes yet. 
 Therefore, we recommend following the installation steps below to proceed:
 
-The following should install all necessary dependencies.
-```
-sudo apt-get -y install cmake g++ make python3 autoconf automake git
-```
-
 Clone and install the unified-planning library.
 
 ```

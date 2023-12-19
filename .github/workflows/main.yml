@@ -41,7 +41,7 @@ jobs:
         env:
           CIBW_ARCHS_MACOS: "x86_64 arm64" 
 
-      - uses: actions/upload-artifact@v3
+      - uses: actions/upload-artifact@master
         with:
           name: mac-wheel
           path: dist/*.whl
@@ -61,12 +61,14 @@ jobs:
       - name: Clone repository
         uses: actions/checkout@v4
 
-      - uses: actions/download-artifact@master
+      - if: matrix.version.os != 'macOS-11'
+        uses: actions/download-artifact@master
         with:
           name: linux-wheels
           path: dist
 
-      - uses: actions/download-artifact@master
+      - if: matrix.version.os == 'macOS-11'
+        uses: actions/download-artifact@master
         with:
           name: mac-wheel
           path: dist

@@ -28,11 +28,6 @@ except ImportError:
 
 
 SYMK_REPO = "https://github.com/speckdavid/symk.git"
-# SYMK_RELEASE = 'release-22.12'
-SYMK_RELEASE = None
-# CHANGESET is ignored if release is not None
-SYMK_CHANGESET = "c97ce836a4247c72b33acfffc8f81985c8ff9dac"
-SYMK_PATCH_NAME = "osp_patch_file.patch"
 
 
 def clone_and_compile_symk():
@@ -42,17 +37,11 @@ def clone_and_compile_symk():
         if os.path.exists(symk):
             shutil.rmtree(symk)
             print(f"Folder '{symk}' deleted.")
-    if SYMK_RELEASE is not None:
-        subprocess.run(["git", "clone", "-b", SYMK_RELEASE, SYMK_REPO])
-    else:
-        subprocess.run(["git", "clone", SYMK_REPO])
+    subprocess.run(["git", "clone", SYMK_REPO])
 
     shutil.move("symk", "up_symk/symk")
     os.chdir("up_symk/symk")
-    if SYMK_RELEASE is None:
-        subprocess.run(["git", "checkout", SYMK_CHANGESET])
-    print("Applying patch...")
-    subprocess.run(["git", "apply", os.path.join("..", SYMK_PATCH_NAME)])
+    subprocess.run(["git", "checkout", "osp"])
     print("Building SymK (this can take some time)...")
     subprocess.run([sys.executable, "build.py"],
                            stdout = subprocess.PIPE, stderr = subprocess.PIPE,
@@ -82,7 +71,7 @@ long_description = "This package makes the [SymK](https://github.com/speckdavid/
 
 setup(
     name="up_symk",
-    version="1.1.0",
+    version="1.2.0",
     description="Unified Planning Integration of the SymK planner",
     long_description=long_description,
     long_description_content_type="text/markdown",

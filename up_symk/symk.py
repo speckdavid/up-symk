@@ -155,9 +155,11 @@ class SymKOptimalPDDLPlanner(SymKMixin, PDDLAnytimePlanner):
 
         # Call OSP engine
         if osp_metric:
-            assert (
-                len(problem.goals) == 0
-            ), "The oversubscription engine of Symk does not support hard goals! To simulate hard goals, please assign a very high utility to the hard goals (and set the plan cost bound accordingly)."
+            if len(problem.goals) != 0:
+                print("The oversubscription engine of Symk does not support hard goals! To simulate hard goals, please assign a very high utility to the hard goals (and set the plan cost bound accordingly).")
+                return PlanGenerationResult(ResultStatus.UNSOLVABLE_INCOMPLETELY,
+                    plan=None,
+                    engine_name=self.name)
 
             # Only translate and preprocess
             self._symk_driver_options = ["--translate", "--search"]

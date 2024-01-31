@@ -42,7 +42,7 @@ class SymKOptimalPDDLPlanner(SymKMixin, PDDLAnytimePlanner):
         symk_translate_options: Optional[List[str]] = None,
         symk_preprocess_options: Optional[List[str]] = None,
         symk_search_time_limit: Optional[str] = None,
-        number_of_plans: Optional[int] = None,
+        number_of_plans: Optional[int] = 1,
         plan_cost_bound: Optional[int] = None,
         log_level: str = "info",
     ):
@@ -121,7 +121,10 @@ class SymKOptimalPDDLPlanner(SymKMixin, PDDLAnytimePlanner):
         if "ACTIONS_COST_KIND" in FEATURES and "INT_NUMBERS_IN_ACTIONS_COST" in FEATURES["ACTIONS_COST_KIND"]:
             supported_kind.set_actions_cost_kind("INT_NUMBERS_IN_ACTIONS_COST")
 
-        if "OVERSUBSCRIPTION_KIND" in FEATURES and "INT_NUMBERS_IN_OVERSUBSCRIPTION" in FEATURES["OVERSUBSCRIPTION_KIND"]:
+        if (
+            "OVERSUBSCRIPTION_KIND" in FEATURES
+            and "INT_NUMBERS_IN_OVERSUBSCRIPTION" in FEATURES["OVERSUBSCRIPTION_KIND"]
+        ):
             supported_kind.set_oversubscription_kind("INT_NUMBERS_IN_OVERSUBSCRIPTION")
 
         if "FLUENTS_TYPE" in FEATURES and "DERIVED_FLUENTS" in FEATURES["FLUENTS_TYPE"]:
@@ -141,33 +144,26 @@ class SymKOptimalPDDLPlanner(SymKMixin, PDDLAnytimePlanner):
     def _solve(
         self,
         problem: "up.model.AbstractProblem",
-        heuristic: Optional[
-            Callable[["up.model.state.ROState"], Optional[float]]
-        ] = None,
+        heuristic: Optional[Callable[["up.model.state.ROState"], Optional[float]]] = None,
         timeout: Optional[float] = None,
         output_stream: Optional[Union[Tuple[IO[str], IO[str]], IO[str]]] = None,
         anytime: bool = False,
     ):
-        osp_metric = any(
-            isinstance(qm, up.model.metrics.Oversubscription)
-            for qm in problem.quality_metrics
-        )
+        osp_metric = any(isinstance(qm, up.model.metrics.Oversubscription) for qm in problem.quality_metrics)
 
         # Call OSP engine
         if osp_metric:
             if len(problem.goals) != 0:
-                print("The oversubscription engine of Symk does not support hard goals! To simulate hard goals, please assign a very high utility to the hard goals (and set the plan cost bound accordingly).")
-                return PlanGenerationResult(ResultStatus.UNSOLVABLE_INCOMPLETELY,
-                    plan=None,
-                    engine_name=self.name)
+                print(
+                    "The oversubscription engine of Symk does not support hard goals! To simulate hard goals, please assign a very high utility to the hard goals (and set the plan cost bound accordingly)."
+                )
+                return PlanGenerationResult(ResultStatus.UNSOLVABLE_INCOMPLETELY, plan=None, engine_name=self.name)
 
             # Only translate and preprocess
             self._symk_driver_options = ["--translate", "--search"]
 
             # Replace search engine
-            self._symk_search_config = replace_search_engine_in_config(
-                self._symk_search_config, "sym-osp-fw"
-            )
+            self._symk_search_config = replace_search_engine_in_config(self._symk_search_config, "sym-osp-fw")
             if self.ensures(up.engines.AnytimeGuarantee.OPTIMAL_PLANS):
                 assert "symq" in self._symk_anytime_search_config
                 self._symk_anytime_search_config = replace_search_engine_in_config(
@@ -179,13 +175,9 @@ class SymKOptimalPDDLPlanner(SymKMixin, PDDLAnytimePlanner):
                     self._symk_anytime_search_config, "symk-osp-fw"
                 )
 
-            return self._solve_osp_task(
-                problem, timeout, output_stream, anytime=anytime
-            )
+            return self._solve_osp_task(problem, timeout, output_stream, anytime=anytime)
 
-        return super()._solve(
-            problem, heuristic, timeout, output_stream, anytime=anytime
-        )
+        return super()._solve(problem, heuristic, timeout, output_stream, anytime=anytime)
 
     # SOLVE OSP TASK => We use the PDDL writter and then change the file
     # This is definetly not ideal but the best we can do
@@ -197,9 +189,7 @@ class SymKOptimalPDDLPlanner(SymKMixin, PDDLAnytimePlanner):
         anytime: bool = False,
     ) -> "up.engines.results.PlanGenerationResult":
         assert isinstance(problem, up.model.Problem)
-        self._writer = OspPDDLWriter(
-            problem, self._needs_requirements, self._rewrite_bool_assignments
-        )
+        self._writer = OspPDDLWriter(problem, self._needs_requirements, self._rewrite_bool_assignments)
         plan = None
         logs: List["up.engines.results.LogMessage"] = []
 
@@ -211,12 +201,8 @@ class SymKOptimalPDDLPlanner(SymKMixin, PDDLAnytimePlanner):
             self._writer.write_problem(problem_filename)
 
             if anytime:
-                assert isinstance(
-                    self, up.engines.pddl_anytime_planner.PDDLAnytimePlanner
-                )
-                cmd = self._get_anytime_cmd(
-                    domain_filename, problem_filename, plan_filename
-                )
+                assert isinstance(self, up.engines.pddl_anytime_planner.PDDLAnytimePlanner)
+                cmd = self._get_anytime_cmd(domain_filename, problem_filename, plan_filename)
             else:
                 assert self._mode_running == OperationMode.ONESHOT_PLANNER
                 cmd = self._get_cmd(domain_filename, problem_filename, plan_filename)
@@ -224,9 +210,7 @@ class SymKOptimalPDDLPlanner(SymKMixin, PDDLAnytimePlanner):
             if output_stream is None:
                 # If we do not have an output stream to write to, we simply call
                 # a subprocess and retrieve the final output and error with communicate
-                process = subprocess.Popen(
-                    cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE
-                )
+                process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
                 timeout_occurred: bool = False
                 proc_out: List[str] = []
                 proc_err: List[str] = []
@@ -242,9 +226,7 @@ class SymKOptimalPDDLPlanner(SymKMixin, PDDLAnytimePlanner):
                     try:
                         loop = asyncio.ProactorEventLoop()
                         exec_res = loop.run_until_complete(
-                            run_command_asyncio(
-                                self, cmd, output_stream=output_stream, timeout=timeout
-                            )
+                            run_command_asyncio(self, cmd, output_stream=output_stream, timeout=timeout)
                         )
                     finally:
                         loop.close()
@@ -253,24 +235,16 @@ class SymKOptimalPDDLPlanner(SymKMixin, PDDLAnytimePlanner):
                     # select (see comment on USE_ASYNCIO_ON_UNIX variable for details)
                     if USE_ASYNCIO_ON_UNIX:
                         exec_res = asyncio.run(
-                            run_command_asyncio(
-                                self, cmd, output_stream=output_stream, timeout=timeout
-                            )
+                            run_command_asyncio(self, cmd, output_stream=output_stream, timeout=timeout)
                         )
                     else:
-                        exec_res = run_command_posix_select(
-                            self, cmd, output_stream=output_stream, timeout=timeout
-                        )
+                        exec_res = run_command_posix_select(self, cmd, output_stream=output_stream, timeout=timeout)
                 timeout_occurred, (proc_out, proc_err), retval = exec_res
 
             logs.append(up.engines.results.LogMessage(LogLevel.INFO, "".join(proc_out)))
-            logs.append(
-                up.engines.results.LogMessage(LogLevel.ERROR, "".join(proc_err))
-            )
+            logs.append(up.engines.results.LogMessage(LogLevel.ERROR, "".join(proc_err)))
             if os.path.isfile(plan_filename):
-                plan = self._plan_from_file(
-                    problem, plan_filename, self._writer.get_item_named
-                )
+                plan = self._plan_from_file(problem, plan_filename, self._writer.get_item_named)
             if timeout_occurred and retval != 0:
                 return PlanGenerationResult(
                     PlanGenerationResultStatus.TIMEOUT,
@@ -278,12 +252,8 @@ class SymKOptimalPDDLPlanner(SymKMixin, PDDLAnytimePlanner):
                     log_messages=logs,
                     engine_name=self.name,
                 )
-        status: PlanGenerationResultStatus = self._result_status(
-            problem, plan, retval, logs
-        )
-        res = PlanGenerationResult(
-            status, plan, log_messages=logs, engine_name=self.name
-        )
+        status: PlanGenerationResultStatus = self._result_status(problem, plan, retval, logs)
+        res = PlanGenerationResult(status, plan, log_messages=logs, engine_name=self.name)
         return res
 
 
@@ -296,7 +266,7 @@ class SymKPDDLPlanner(SymKOptimalPDDLPlanner):
         symk_translate_options: Optional[List[str]] = None,
         symk_preprocess_options: Optional[List[str]] = None,
         symk_search_time_limit: Optional[str] = None,
-        number_of_plans: Optional[int] = None,
+        number_of_plans: Optional[int] = 1,
         plan_cost_bound: Optional[int] = None,
         log_level: str = "info",
     ):
@@ -325,7 +295,7 @@ class SymKPDDLPlanner(SymKOptimalPDDLPlanner):
     # Oneshot planner is optimal
     @staticmethod
     def satisfies(optimality_guarantee: "OptimalityGuarantee") -> bool:
-        return True
+        return False
 
     # Plans are reported with increasing costs thus potentially also non-optimal ones
     @staticmethod
@@ -335,18 +305,11 @@ class SymKPDDLPlanner(SymKOptimalPDDLPlanner):
     def _solve(
         self,
         problem: "up.model.AbstractProblem",
-        heuristic: Optional[
-            Callable[["up.model.state.ROState"], Optional[float]]
-        ] = None,
+        heuristic: Optional[Callable[["up.model.state.ROState"], Optional[float]]] = None,
         timeout: Optional[float] = None,
         output_stream: Optional[Union[Tuple[IO[str], IO[str]], IO[str]]] = None,
         anytime: bool = False,
     ):
-        if anytime:
-            self._guarantee_metrics_task = ResultStatus.SOLVED_SATISFICING
-        else:
-            self._guarantee_metrics_task = ResultStatus.SOLVED_OPTIMALLY
+        self._guarantee_metrics_task = ResultStatus.SOLVED_OPTIMALLY
 
-        return super()._solve(
-            problem, heuristic, timeout, output_stream, anytime=anytime
-        )
+        return super()._solve(problem, heuristic, timeout, output_stream, anytime=anytime)

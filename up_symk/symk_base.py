@@ -21,7 +21,6 @@ credits = {
     "long_description": "SymK is a state-of-the-art domain-independent optimal and top-k planner.",
 }
 
-
 class SymKMixin(PDDLPlanner):
     def __init__(
         self,

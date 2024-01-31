@@ -71,7 +71,7 @@ long_description = "This package makes the [SymK](https://github.com/speckdavid/
 
 setup(
     name="up_symk",
-    version="1.2.0",
+    version="1.3.0",
     description="Unified Planning Integration of the SymK planner",
     long_description=long_description,
     long_description_content_type="text/markdown",

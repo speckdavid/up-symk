@@ -43,6 +43,7 @@ class SymKOptimalPDDLPlanner(SymKMixin, PDDLAnytimePlanner):
         symk_preprocess_options: Optional[List[str]] = None,
         symk_search_time_limit: Optional[str] = None,
         number_of_plans: Optional[int] = 1,
+        loopless: Optional[bool] = False,
         plan_cost_bound: Optional[int] = None,
         log_level: str = "info",
     ):
@@ -55,7 +56,7 @@ class SymKOptimalPDDLPlanner(SymKMixin, PDDLAnytimePlanner):
             symk_search_config = f"sym-bd(bound={input_plan_cost_bound})"
 
         if symk_anytime_search_config is None:
-            symk_anytime_search_config = f"symq-bd(plan_selection=top_k(num_plans={input_number_of_plans},dump_plans=true),bound={input_plan_cost_bound},quality=1.0)"
+            symk_anytime_search_config = f"symq-bd(simple={loopless},plan_selection=top_k(num_plans={input_number_of_plans},dump_plans=true),bound={input_plan_cost_bound},quality=1.0)"
 
         SymKMixin.__init__(
             self,
@@ -267,6 +268,7 @@ class SymKPDDLPlanner(SymKOptimalPDDLPlanner):
         symk_preprocess_options: Optional[List[str]] = None,
         symk_search_time_limit: Optional[str] = None,
         number_of_plans: Optional[int] = 1,
+        loopless: Optional[bool] = False,
         plan_cost_bound: Optional[int] = None,
         log_level: str = "info",
     ):
@@ -274,7 +276,7 @@ class SymKPDDLPlanner(SymKOptimalPDDLPlanner):
         input_plan_cost_bound = format_input_value(plan_cost_bound, min_value=0)
 
         if symk_anytime_search_config is None:
-            symk_anytime_search_config = f"symk-bd(plan_selection=top_k(num_plans={input_number_of_plans},dump_plans=true),bound={input_plan_cost_bound})"
+            symk_anytime_search_config = f"symk-bd(simple={loopless},plan_selection=top_k(num_plans={input_number_of_plans},dump_plans=true),bound={input_plan_cost_bound})"
 
         super().__init__(
             symk_search_config=symk_search_config,

@@ -1,4 +1,13 @@
-import pkg_resources
+try:
+    # Try the modern Python 3.9+ way
+    from importlib import resources
+    def get_resource_path(package, resource):
+        return resources.files(package).joinpath(resource)
+except (ImportError, AttributeError):
+    # Fallback for Python < 3.9 or environments without importlib.resources
+    import pkg_resources
+    def get_resource_path(package, resource):
+        return pkg_resources.resource_filename(package, resource)
 import sys
 
 import unified_planning as up
@@ -44,7 +53,7 @@ class SymKMixin(PDDLPlanner):
         self._guarantee_metrics_task = ResultStatus.SOLVED_OPTIMALLY
 
     def _base_cmd(self, plan_filename: str) -> List[str]:
-        downward = pkg_resources.resource_filename(__name__, "symk/fast-downward.py")
+        downward = get_resource_path(__name__, "symk/fast-downward.py")
         assert sys.executable, "Path to interpreter could not be found"
         cmd = [sys.executable, downward, "--plan-file", plan_filename]
         if self._symk_driver_options is not None:

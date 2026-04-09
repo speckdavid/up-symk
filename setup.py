@@ -71,16 +71,19 @@ long_description = "This package makes the [SymK](https://github.com/speckdavid/
 
 setup(
     name="up_symk",
-    version="1.3.1",
+    version="1.4.0",
     description="Unified Planning Integration of the SymK planner",
     long_description=long_description,
     long_description_content_type="text/markdown",
     author="David Speck",
-    author_email="david.speck@liu.se",
+    author_email="davidjakob.speck@unibas.ch",
     url="https://github.com/aiplan4eu/symk/",
+    license="GPL-3.0-or-later",
+    license_files=("LICENSE.md",),
+    python_requires=">=3.8",
+    install_requires=["unified_planning"],
     classifiers=[
-        "Development Status :: 4 - Beta",
-        "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
+        "Development Status :: 5 - Production/Stable",
         "Programming Language :: Python :: 3",
         "Topic :: Scientific/Engineering :: Artificial Intelligence",
     ],
@@ -102,7 +105,7 @@ setup(
     cmdclass={
         "bdist_wheel": bdist_wheel,
         "build_py": install_symk,
-        "develop": install_symk,
+        "develop": install_symk_develop,
     },
     has_ext_modules=lambda: True,
 )

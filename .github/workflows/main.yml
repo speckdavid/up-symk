@@ -24,7 +24,7 @@ jobs:
         env:
           CIBW_SKIP: "*-musllinux_*"
 
-          CIBW_ARCHS_MACOS: "arm64 x86_64"
+          CIBW_ARCHS_MACOS: "arm64"
           MACOSX_DEPLOYMENT_TARGET: "11.0"
 
       - name: Upload wheels

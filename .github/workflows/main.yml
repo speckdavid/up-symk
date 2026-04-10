@@ -104,11 +104,6 @@ jobs:
 
       - uses: actions/download-artifact@master
         with:
-          name: cibw-wheels-windows-latest
-          path: dist
-
-      - uses: actions/download-artifact@master
-        with:
           name: cibw-wheels-macos-13
           path: dist
 

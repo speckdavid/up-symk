@@ -28,7 +28,7 @@ except ImportError:
 
 
 SYMK_REPO = "https://github.com/speckdavid/symk.git"
-
+COMMIT_HASH = "1f54c5eb72cc9328603722cc07b478d33d408a94"
 
 def clone_and_compile_symk():
     curr_dir = os.getcwd()
@@ -41,7 +41,7 @@ def clone_and_compile_symk():
 
     shutil.move("symk", "up_symk/symk")
     os.chdir("up_symk/symk")
-    subprocess.run(["git", "checkout", "osp"])
+    subprocess.run(["git", "checkout", COMMIT_HASH])
     print("Building SymK (this can take some time)...")
     subprocess.run([sys.executable, "build.py"],
                            stdout = subprocess.PIPE, stderr = subprocess.PIPE,

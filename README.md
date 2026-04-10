@@ -11,6 +11,14 @@ pip install --pre unified-planning
 pip install up-symk
 ```
 
+### Oversubscription Support
+
+We have dropped support for oversubscription planning (OSP) starting from version 1.4.0.
+
+The main reason for this decision is that the codebases for standard planning and OSP have diverged significantly over time, and the OSP-specific implementation was no longer actively maintained. Furthermore, the integration was rather brittle, and the Unified Planning framework adopts a broader and evolving view of OSP, which made correct and robust integration increasingly difficult and time-consuming.
+
+If you are interested in using SymK for oversubscription planning, you may want to install version 1.3.1 of up-symk.
+
 ### Axiom Support
 
 Since our axiom implementation is not yet integrated into the official unified planning library, we recommend building our version of the [unified planning library](https://github.com/speckdavid/unified-planning) locally and then building this `up-symk' package.

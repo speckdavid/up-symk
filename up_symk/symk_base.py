@@ -1,23 +1,25 @@
-try:
-    # Try the modern Python 3.9+ way
-    from importlib import resources
-    def get_resource_path(package, resource):
-        return resources.files(package).joinpath(resource)
-except (ImportError, AttributeError):
-    # Fallback for Python < 3.9 or environments without importlib.resources
-    import pkg_resources
-    def get_resource_path(package, resource):
-        return pkg_resources.resource_filename(package, resource)
 import sys
+
+if sys.version_info >= (3, 9):
+    from importlib import resources
+
+    def get_resource_path():
+        return str(resources.files("up_symk").joinpath("symk", "fast-downward.py"))
+
+else:
+    # Python 3.8 fallback
+    import pkg_resources
+
+    def get_resource_path():
+        return pkg_resources.resource_filename("up_symk", "symk/fast-downward.py")
+
 
 import unified_planning as up
 
-from fractions import Fraction
-from typing import List, Optional, Union
+from typing import List, Optional
 from unified_planning.engines import PlanGenerationResultStatus as ResultStatus
 from unified_planning.engines import PDDLPlanner
 from unified_planning.engines.results import LogMessage
-from unified_planning.utils import powerset
 
 
 credits = {
@@ -29,6 +31,7 @@ credits = {
     "short_description": "SymK is a state-of-the-art domain-independent optimal and top-k planner.",
     "long_description": "SymK is a state-of-the-art domain-independent optimal and top-k planner.",
 }
+
 
 class SymKMixin(PDDLPlanner):
     def __init__(
@@ -53,7 +56,7 @@ class SymKMixin(PDDLPlanner):
         self._guarantee_metrics_task = ResultStatus.SOLVED_OPTIMALLY
 
     def _base_cmd(self, plan_filename: str) -> List[str]:
-        downward = get_resource_path(__name__, "symk/fast-downward.py")
+        downward = str(get_resource_path())
         assert sys.executable, "Path to interpreter could not be found"
         cmd = [sys.executable, downward, "--plan-file", plan_filename]
         if self._symk_driver_options is not None:

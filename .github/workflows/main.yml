@@ -39,7 +39,12 @@ jobs:
       - uses: actions/checkout@v4
       
       - uses: actions/setup-python@v5
-      
+
+      - name: Install build tools (macOS)
+        run: |
+          brew update
+          brew install autoconf automake
+
       - name: Install build tools
         run: python -m pip install --upgrade pip  setuptools==75.3.0
 

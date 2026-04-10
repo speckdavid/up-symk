@@ -1,0 +1,53 @@
+[project]
+name="up_symk"
+version="1.4.0"
+description="Unified Planning Integration of the SymK planner"
+readme = {text = "This package makes the [SymK](https://github.com/speckdavid/symk) planner available in the [unified_planning library](https://github.com/aiplan4eu/unified-planning) by the [AIPlan4EU project](https://www.aiplan4eu-project.eu/).", content-type = "text/markdown"}
+requires-python = ">=3.9"
+license = {text = "GPL-3.0-only"}
+authors = [
+    {name = "David Speck"},
+]
+maintainers = [
+    {name = "David Speck", email = "davidjakob.speck@unibas.ch"},
+]
+dependencies = ["setuptools>=59.6.0"]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
+    "Programming Language :: Python :: 3",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+
+[project.urls]
+Homepage = "https://github.com/aiplan4eu/symk/"
+
+[tool.setuptools]
+py-modules = ["up_symk._custom_build"]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["up_symk"]  # ["*"] by default
+#find = {} 
+
+[tool.setuptools.package-data]
+up_symk = [
+    "fast_downward.py",
+    "symk/fast-downward.py",
+    "symk/README.md",
+    "symk/LICENSE.md",
+    "symk/builds/release/bin/*",
+    "symk/builds/release/bin/translate/*",
+    "symk/builds/release/bin/translate/pddl/*",
+    "symk/builds/release/bin/translate/pddl_parser/*",
+    "symk/driver/*",
+    "symk/driver/portfolios/*",
+]
+
+[tool.setuptools.cmdclass]
+build_py = "up_symk._custom_build.install_symk"
+bdist_wheel = "up_symk._custom_build.bdist_wheel"
+
+[build-system]
+requires = ["setuptools>=59.6"]
+build-backend = "setuptools.build_meta"

@@ -6,7 +6,7 @@ import subprocess
 
 def clone_and_compile_symk():
     SYMK_REPO = 'https://github.com/speckdavid/symk.git'
-    SYMK_CHANGESET = '6fcd17a979c285ade62fdfd37a11aa324ade7875'
+    SYMK_CHANGESET = '991768db1dcda951e97a930df1235ae6c75d5fc7'
     
     curr_dir = os.getcwd()
     print("Cloning SymK repository...")
